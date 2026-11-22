@@ -70,7 +70,10 @@ To change the address or password, use **⋮ → Reconfigure** on the integratio
 
 ### HACS
 
-1. HACS → ⋮ → **Custom repositories** → add this repository's URL as an *Integration*.
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=alatas&repository=ha-rtsp-motion&category=integration)
+
+1. Click the button above, or in HACS → ⋮ → **Custom repositories** add
+   `https://github.com/alatas/ha-rtsp-motion` as an *Integration*.
 2. Download **RTSP Motion**, then restart Home Assistant.
 
 ### Manual
