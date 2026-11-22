@@ -31,7 +31,7 @@ DEFAULT_MASKS: list[tuple[float, float, float, float]] = [(0.65, 0.0, 0.35, 0.12
 @dataclass
 class DetectorSettings:
     min_percent: float = 0.5        # % of the watched area that must change
-    pixel_threshold: int = 25       # brightness change (0-255) for a pixel to count
+    pixel_threshold: int = 15       # brightness change (0-255) for a pixel to count
     confirm_frames: int = 3         # 0 = fire immediately
     hold_seconds: float = 5.0       # motion stays on this long after the last change
     compare_seconds: float = 0.5    # compare each frame with the one this much older

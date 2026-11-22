@@ -61,7 +61,7 @@ actions:
 | Setting | Default | Meaning |
 |---|---|---|
 | Minimum change | 0.5 % | Percent of the picture that must change. Higher = less sensitive. |
-| Pixel sensitivity | 25 | How much a pixel's brightness (0–255) must change to count. Raise it if camera noise triggers motion. |
+| Pixel sensitivity | 15 | How much a pixel's brightness (0–255) must change to count. Raise it if camera noise triggers motion. |
 | Compare with frame from | 0.5 s | Each frame is compared with the frame from this long ago. Longer catches slow or distant movement (someone walking in from far away); 0 = the previous frame. |
 | Confirm frames | 3 | Frames to wait to confirm a change is still there. Filters out one-frame video glitches. 0 = off. |
 | Motion hold time | 5 s | Motion stays on this long after the last change. |
