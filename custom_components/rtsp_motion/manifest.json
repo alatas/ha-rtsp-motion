@@ -1,6 +1,7 @@
 {
   "domain": "rtsp_motion",
   "name": "RTSP Motion",
+  "categories": ["security_safety.cameras", "sensors.motion_presence"],
   "codeowners": ["@alatas"],
   "config_flow": true,
   "dependencies": ["stream"],

@@ -68,13 +68,21 @@ To change the address or password, use **⋮ → Reconfigure** on the integratio
 
 ## Installation
 
-### HACS
+### Marketplace (Home Assistant 2026.11 and newer)
+
+[![Open your Home Assistant instance and open this repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=alatas&repository=ha-rtsp-motion&category=integration)
+
+Click the button, or in **Settings → Marketplace** add
+`https://github.com/alatas/ha-rtsp-motion` as a custom *Integration* repository.
+Download **RTSP Motion**, then restart Home Assistant.
+
+### HACS (Home Assistant 2026.10 and older)
 
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=alatas&repository=ha-rtsp-motion&category=integration)
 
-1. Click the button above, or in HACS → ⋮ → **Custom repositories** add
-   `https://github.com/alatas/ha-rtsp-motion` as an *Integration*.
-2. Download **RTSP Motion**, then restart Home Assistant.
+Click the button, or in HACS → ⋮ → **Custom repositories** add
+`https://github.com/alatas/ha-rtsp-motion` as an *Integration*. Download
+**RTSP Motion**, then restart Home Assistant.
 
 ### Manual
 
