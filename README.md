@@ -92,6 +92,13 @@ folder and restart Home Assistant.
 Tests use `pytest-homeassistant-custom-component` and need Linux (or WSL):
 
 ```bash
-pip install pytest-homeassistant-custom-component
+pip install -r requirements_test.txt
 pytest
 ```
+
+GitHub Actions run Home Assistant's `hassfest`, the HACS validator and the tests on
+every push.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
