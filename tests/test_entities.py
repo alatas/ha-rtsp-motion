@@ -23,6 +23,7 @@ async def test_entities_follow_detector(hass, setup_entry, fake_detector):
     assert hass.states.get("binary_sensor.baby_room_motion").state == STATE_OFF
     assert hass.states.get("camera.baby_room").state != STATE_UNAVAILABLE
 
+    assert hass.states.get("image.baby_room_last_motion").state == STATE_UNAVAILABLE
     hub.on_motion_start(1.234)
     await hass.async_block_till_done()
     assert hass.states.get("binary_sensor.baby_room_motion").state == STATE_ON

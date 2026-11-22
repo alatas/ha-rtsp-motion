@@ -26,6 +26,11 @@ class LastMotionImage(RtspMotionEntity, ImageEntity):
         ImageEntity.__init__(self, hass)
         self._shown_motion = None
 
+    @property
+    def available(self) -> bool:
+        """No snapshot until the first motion since start (it isn't kept across restarts)."""
+        return self.hub.last_motion is not None
+
     @callback
     def _handle_hub_update(self) -> None:
         if self.hub.last_motion is not None and self.hub.last_motion != self._shown_motion:

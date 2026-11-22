@@ -66,6 +66,35 @@ def test_detects_square_ignores_glitch_and_clock(tmp_path):
     assert (det.alarm_image()[..., 0] == 255).any()  # red marks
 
 
+def test_gray_is_monotonic_luma():
+    """Regression: uint8 overflow once scrambled the luma and hid normal motion."""
+    from custom_components.rtsp_motion.detector import _gray
+
+    levels = np.arange(256, dtype=np.uint8)
+    rgb = np.stack([levels, levels, levels], axis=-1)[None, :, :]
+    gray = _gray(rgb)[0].astype(int)
+    assert np.all(np.diff(gray) >= 0)
+    assert abs(gray[200] - 200) <= 1 and abs(gray[255] - 255) <= 1
+    # A dim object moving on a dark night-vision background must still count.
+    dark = np.full((1, 1, 3), 40, np.uint8)
+    brighter = np.full((1, 1, 3), 70, np.uint8)
+    assert int(_gray(brighter)[0, 0]) - int(_gray(dark)[0, 0]) > 25
+
+
+def test_small_dim_motion_is_detected(tmp_path):
+    """A person-sized, low-contrast change (like night vision) must fire."""
+    frames = []
+    for i in range(60):
+        img = np.full((720, 1280, 3), 40, np.uint8)
+        if i >= 30:
+            img[300:420, 500:620] = 75   # ~1.6% of the picture, +35 brightness
+        frames.append(img)
+    path = tmp_path / "dim.mp4"
+    make_video(path, frames)
+    events, _ = run(path, DetectorSettings(hold_seconds=0))
+    assert any(kind == "start" for kind, _ in events)
+
+
 def test_without_confirm_frames_glitch_fires(tmp_path):
     path = tmp_path / "glitch.mp4"
     make_video(path, [scene(i) for i in range(45)])

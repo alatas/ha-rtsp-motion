@@ -229,12 +229,13 @@ class MotionDetector(threading.Thread):
 
 
 def _gray(rgb: np.ndarray) -> np.ndarray:
-    g = (rgb[..., 0].astype(np.uint16) * 77 + rgb[..., 1] * 150 + rgb[..., 2] * 29) >> 8
-    # 3x3 box blur against sensor noise (the AREA downscale already averages a lot).
-    p = np.pad(g, 1, mode="edge")
-    h, w = g.shape
-    s = sum(p[y:y + h, x:x + w] for y in range(3) for x in range(3))
-    return (s // 9).astype(np.uint8)
+    """Luma (0-255). No extra blur: the AREA downscale already averages sensor noise.
+
+    Every channel is widened to uint16 *before* multiplying; uint8 * 150 would wrap
+    around and scramble the brightness, hiding all but very large changes.
+    """
+    c = rgb.astype(np.uint16)
+    return ((c[..., 0] * 77 + c[..., 1] * 150 + c[..., 2] * 29) >> 8).astype(np.uint8)
 
 
 def _build_keep(shape: tuple[int, int], masks) -> np.ndarray:
