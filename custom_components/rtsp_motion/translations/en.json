@@ -1,0 +1,93 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add an RTSP camera",
+        "description": "Enter the camera's RTSP address. The stream is tested before saving.",
+        "data": {
+          "name": "Name",
+          "host": "Host",
+          "port": "Port",
+          "path": "Stream path",
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "host": "IP address or host name of the camera, e.g. 192.168.1.50.",
+          "path": "The part after the address, e.g. live0 for rtsp://192.168.1.50/live0."
+        }
+      },
+      "reconfigure": {
+        "title": "Change camera connection",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "path": "Stream path",
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not get video from the camera. Check the host, port and path, and that RTSP is enabled on the camera.",
+      "invalid_auth": "The camera rejected the username or password.",
+      "stream_not_found": "The camera has no stream at this path. If it just restarted, wait a few seconds and try again."
+    },
+    "abort": {
+      "already_configured": "This camera stream is already added.",
+      "different_camera": "That is a different camera. Add it as a new device instead.",
+      "reconfigure_successful": "The connection was updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Motion detection settings",
+        "data": {
+          "min_percent": "Minimum change",
+          "pixel_threshold": "Pixel sensitivity",
+          "confirm_frames": "Confirm frames",
+          "hold_seconds": "Motion hold time",
+          "ignore_areas": "Ignored areas"
+        },
+        "data_description": {
+          "min_percent": "Percent of the picture that must change to detect motion. Higher = less sensitive.",
+          "pixel_threshold": "How much a pixel's brightness (0-255) must change to count. Raise it if camera noise triggers motion.",
+          "confirm_frames": "Frames to wait to confirm a change is still there. Filters out one-frame video glitches. 0 = off.",
+          "hold_seconds": "Motion stays on this long after the last change.",
+          "ignore_areas": "Areas to ignore, as x,y,width,height in percent of the picture, separated by ';'. The default 65,0,35,12 is the top-right corner, where many cameras show a clock. Empty = watch the whole picture."
+        }
+      }
+    },
+    "error": {
+      "invalid_areas": "Use x,y,width,height in percent (0-100), e.g. 65,0,35,12; 0,80,20,20"
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "motion_detected": "Motion detected",
+      "motion_cleared": "Motion cleared",
+      "video_lost": "Video interrupted",
+      "video_connected": "Video connected"
+    },
+    "extra_fields": {
+      "above": "Only when the change reaches (%)"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "motion": { "name": "Motion" },
+      "video_connected": { "name": "Video" }
+    },
+    "sensor": {
+      "motion_change": { "name": "Motion change" },
+      "frame_rate": { "name": "Frame rate" }
+    },
+    "image": {
+      "last_motion": { "name": "Last motion" }
+    },
+    "switch": {
+      "motion_detection": { "name": "Motion detection" }
+    }
+  }
+}

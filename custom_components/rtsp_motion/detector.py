@@ -53,6 +53,7 @@ class Callbacks:
     def on_connected(self) -> None: ...
     def on_disconnected(self, reason: str) -> None: ...
     def on_motion_start(self, percent: float) -> None: ...
+    def on_motion_update(self, peak_percent: float) -> None: ...
     def on_motion_end(self, peak_percent: float) -> None: ...
     def on_update(self, state: DetectorState) -> None: ...
 
@@ -76,11 +77,23 @@ class MotionDetector(threading.Thread):
         self._alarm_rgb: np.ndarray | None = None
         self._alarm_changed: np.ndarray | None = None
         self._keep: np.ndarray | None = None
+        self._paused = False
 
     # ---- public API -------------------------------------------------------
 
     def stop(self) -> None:
         self._stop_event.set()
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    @paused.setter
+    def paused(self, value: bool) -> None:
+        """Paused: video keeps flowing, but no motion is reported."""
+        self._paused = value
+        if value:
+            self._end_motion()
 
     def update_settings(self, settings: DetectorSettings) -> None:
         self.settings = settings
@@ -196,9 +209,13 @@ class MotionDetector(threading.Thread):
         return (diff > self.settings.pixel_threshold) & keep
 
     def _confirmed(self, percent: float, now: float) -> None:
+        if self._paused:
+            return
         self.state.last_motion = now
         if self.state.motion:
-            self.state.peak_percent = max(self.state.peak_percent, percent)
+            if percent > self.state.peak_percent:
+                self.state.peak_percent = percent
+                self.callbacks.on_motion_update(percent)
             return
         self.state.motion = True
         self.state.peak_percent = percent
