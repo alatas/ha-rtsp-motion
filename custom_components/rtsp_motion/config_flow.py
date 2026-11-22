@@ -17,7 +17,9 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_COMPARE_SECONDS,
     CONF_CONFIRM_FRAMES,
+    DEFAULT_COMPARE_SECONDS,
     CONF_HOLD_SECONDS,
     CONF_IGNORE_AREAS,
     CONF_MIN_PERCENT,
@@ -175,6 +177,8 @@ class RtspMotionOptionsFlow(OptionsFlow):
                     num(0.01, 100, 0.01, "%"),
                 vol.Required(CONF_PIXEL_THRESHOLD, default=o.get(CONF_PIXEL_THRESHOLD, DEFAULT_PIXEL_THRESHOLD)):
                     num(1, 255, 1),
+                vol.Required(CONF_COMPARE_SECONDS, default=o.get(CONF_COMPARE_SECONDS, DEFAULT_COMPARE_SECONDS)):
+                    num(0, 5, 0.05, "s"),
                 vol.Required(CONF_CONFIRM_FRAMES, default=o.get(CONF_CONFIRM_FRAMES, DEFAULT_CONFIRM_FRAMES)):
                     num(0, 30, 1),
                 vol.Required(CONF_HOLD_SECONDS, default=o.get(CONF_HOLD_SECONDS, DEFAULT_HOLD_SECONDS)):

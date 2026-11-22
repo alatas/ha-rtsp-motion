@@ -57,7 +57,7 @@ def scene(i):
 def test_detects_square_ignores_glitch_and_clock(tmp_path):
     path = tmp_path / "scene.mp4"
     make_video(path, [scene(i) for i in range(120)])
-    events, det = run(path, DetectorSettings(hold_seconds=0))
+    events, det = run(path, DetectorSettings(hold_seconds=1))
     starts = [p for kind, p in events if kind == "start"]
     # The square appearing and disappearing are both changes; the glitch and the clock are not.
     assert len(starts) == 2
@@ -92,6 +92,29 @@ def test_small_dim_motion_is_detected(tmp_path):
     path = tmp_path / "dim.mp4"
     make_video(path, frames)
     events, _ = run(path, DetectorSettings(hold_seconds=0))
+    assert any(kind == "start" for kind, _ in events)
+
+
+def _slow_walker(tmp_path):
+    """A 200x200 object crossing slowly (3 px per frame at 15 fps), like a far-away person."""
+    frames = []
+    for i in range(90):
+        img = np.full((720, 1280, 3), 40, np.uint8)
+        x = 200 + 3 * i
+        img[300:500, x:x + 200] = 100
+        frames.append(img)
+    path = tmp_path / "walker.mp4"
+    make_video(path, frames)
+    return path
+
+
+def test_slow_movement_needs_the_time_gap(tmp_path):
+    path = _slow_walker(tmp_path)
+    # Frame-to-frame only sees thin edges: below the 0.5% limit.
+    events, _ = run(path, DetectorSettings(hold_seconds=0, compare_seconds=0))
+    assert not any(kind == "start" for kind, _ in events)
+    # Against the frame from 0.5 s earlier the whole movement counts.
+    events, _ = run(path, DetectorSettings(hold_seconds=0, compare_seconds=0.5))
     assert any(kind == "start" for kind, _ in events)
 
 

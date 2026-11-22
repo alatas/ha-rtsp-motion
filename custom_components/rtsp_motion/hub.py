@@ -16,6 +16,8 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_PERCENT,
+    CONF_COMPARE_SECONDS,
+    DEFAULT_COMPARE_SECONDS,
     CONF_CONFIRM_FRAMES,
     CONF_HOLD_SECONDS,
     CONF_IGNORE_AREAS,
@@ -71,6 +73,7 @@ def settings_from_options(options: dict) -> DetectorSettings:
         pixel_threshold=int(options.get(CONF_PIXEL_THRESHOLD, DEFAULT_PIXEL_THRESHOLD)),
         confirm_frames=int(options.get(CONF_CONFIRM_FRAMES, DEFAULT_CONFIRM_FRAMES)),
         hold_seconds=float(options.get(CONF_HOLD_SECONDS, DEFAULT_HOLD_SECONDS)),
+        compare_seconds=float(options.get(CONF_COMPARE_SECONDS, DEFAULT_COMPARE_SECONDS)),
         masks=parse_areas(options.get(CONF_IGNORE_AREAS, DEFAULT_IGNORE_AREAS)),
     )
 

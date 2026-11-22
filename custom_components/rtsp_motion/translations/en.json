@@ -46,6 +46,7 @@
         "data": {
           "min_percent": "Minimum change",
           "pixel_threshold": "Pixel sensitivity",
+          "compare_seconds": "Compare with frame from",
           "confirm_frames": "Confirm frames",
           "hold_seconds": "Motion hold time",
           "ignore_areas": "Ignored areas"
@@ -53,6 +54,7 @@
         "data_description": {
           "min_percent": "Percent of the picture that must change to detect motion. Higher = less sensitive.",
           "pixel_threshold": "How much a pixel's brightness (0-255) must change to count. Raise it if camera noise triggers motion.",
+          "compare_seconds": "Each frame is compared with the frame from this many seconds earlier. Longer catches slow or distant movement better; 0 = the previous frame.",
           "confirm_frames": "Frames to wait to confirm a change is still there. Filters out one-frame video glitches. 0 = off.",
           "hold_seconds": "Motion stays on this long after the last change.",
           "ignore_areas": "Areas to ignore, as x,y,width,height in percent of the picture, separated by ';'. The default 65,0,35,12 is the top-right corner, where many cameras show a clock. Empty = watch the whole picture."

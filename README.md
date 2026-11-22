@@ -1,8 +1,10 @@
 # RTSP Motion for Home Assistant
 
 Simple pixel-change motion detection for any RTSP camera. It compares each video
-frame with the previous one and reports motion when more than a set percentage of
-the picture changes. No AI, no cloud, no extra add-on.
+frame with the one from half a second earlier and reports motion when more than a
+set percentage of the picture changes. No AI, no cloud, no extra add-on.
+
+It detects *change*: someone moving is detected, someone standing still is not.
 
 ## What you get
 
@@ -60,6 +62,7 @@ actions:
 |---|---|---|
 | Minimum change | 0.5 % | Percent of the picture that must change. Higher = less sensitive. |
 | Pixel sensitivity | 25 | How much a pixel's brightness (0–255) must change to count. Raise it if camera noise triggers motion. |
+| Compare with frame from | 0.5 s | Each frame is compared with the frame from this long ago. Longer catches slow or distant movement (someone walking in from far away); 0 = the previous frame. |
 | Confirm frames | 3 | Frames to wait to confirm a change is still there. Filters out one-frame video glitches. 0 = off. |
 | Motion hold time | 5 s | Motion stays on this long after the last change. |
 | Ignored areas | `65,0,35,12` | `x,y,width,height` in percent, separated by `;`. The default is the top-right corner, where many cameras show a clock. Empty = whole picture. |

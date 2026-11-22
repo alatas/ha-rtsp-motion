@@ -10,6 +10,7 @@ CONF_PIXEL_THRESHOLD = "pixel_threshold"
 CONF_CONFIRM_FRAMES = "confirm_frames"
 CONF_HOLD_SECONDS = "hold_seconds"
 CONF_IGNORE_AREAS = "ignore_areas"
+CONF_COMPARE_SECONDS = "compare_seconds"
 
 DEFAULT_PORT = 554
 DEFAULT_PATH = "live0"
@@ -17,6 +18,7 @@ DEFAULT_MIN_PERCENT = 0.5
 DEFAULT_PIXEL_THRESHOLD = 25
 DEFAULT_CONFIRM_FRAMES = 3
 DEFAULT_HOLD_SECONDS = 5.0
+DEFAULT_COMPARE_SECONDS = 0.5
 # x,y,width,height in percent of the picture; ';' between areas. Default: camera clock.
 DEFAULT_IGNORE_AREAS = "65,0,35,12"
 

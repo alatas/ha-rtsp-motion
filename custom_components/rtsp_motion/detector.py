@@ -4,15 +4,17 @@ No Home Assistant imports here: the module only needs PyAV and numpy (both
 ship with Home Assistant), so it can be tested on its own.
 
 A background thread reads the stream, scales each frame down to a small
-grayscale image and compares it with the previous one. A change bigger than
-`min_percent` of the watched area is confirmed `confirm_frames` frames later
-(against the frame from before the change) to reject one-frame decode glitches.
+grayscale image and compares it with the frame from `compare_seconds` earlier.
+A change bigger than `min_percent` of the watched area is confirmed
+`confirm_frames` frames later (against the same earlier frame) to reject
+one-frame decode glitches.
 """
 from __future__ import annotations
 
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -32,6 +34,7 @@ class DetectorSettings:
     pixel_threshold: int = 25       # brightness change (0-255) for a pixel to count
     confirm_frames: int = 3         # 0 = fire immediately
     hold_seconds: float = 5.0       # motion stays on this long after the last change
+    compare_seconds: float = 0.5    # compare each frame with the one this much older
     masks: list[tuple[float, float, float, float]] = field(
         default_factory=lambda: list(DEFAULT_MASKS)
     )
@@ -44,7 +47,7 @@ class DetectorState:
     percent: float = 0.0            # change in the latest frame
     peak_percent: float = 0.0       # highest confirmed change during the current motion
     fps: float = 0.0
-    last_motion: float | None = None  # time.time() of the last confirmed change
+    last_motion: float | None = None  # stream time of the last confirmed change
 
 
 class Callbacks:
@@ -137,8 +140,13 @@ class MotionDetector(threading.Thread):
         ) as container:
             stream = container.streams.video[0]
             stream.thread_type = "AUTO"
-            prev = None
+            # Recent frames as (stream time, gray). history[0] is the reference: the
+            # newest frame at least `compare_seconds` old. Comparing across that gap
+            # (instead of with the previous frame) makes slow or distant movement show
+            # up as a whole silhouette, not just thin edges.
+            history: deque[tuple[float, np.ndarray]] = deque()
             pending_ref = None
+            pending_since = 0.0
             pending_left = 0
             last_update = time.time()
             frames_since_update = 0
@@ -146,6 +154,8 @@ class MotionDetector(threading.Thread):
                 if self._stop_event.is_set():
                     return
                 now = time.time()
+                # Stream timestamps keep the gap right even if decoding lags or bursts.
+                t = frame.time if frame.time is not None else now
                 frames_since_update += 1
 
                 height = round(frame.height * ANALYSIS_WIDTH / frame.width / 2) * 2
@@ -159,15 +169,20 @@ class MotionDetector(threading.Thread):
                     self.callbacks.on_connected()
                 if self._keep is None or self._keep.shape != gray.shape:
                     self._keep = _build_keep(gray.shape, self.settings.masks)
-                    prev = None
+                    history.clear()
+                    pending_ref = None
+                if history and t < history[-1][0]:
+                    history.clear()  # timestamps jumped back (stream restarted)
+                    pending_ref = None
                 keep = self._keep
                 watched = max(1, int(np.count_nonzero(keep)))
                 s = self.settings
 
                 changed = None
                 fired_changed = None
-                if prev is not None:
-                    changed = self._changed(prev, gray, keep)
+                if history:
+                    ref = history[0][1]
+                    changed = self._changed(ref, gray, keep)
                     self.state.percent = np.count_nonzero(changed) * 100.0 / watched
                     if pending_ref is not None:
                         pending_left -= 1
@@ -176,19 +191,26 @@ class MotionDetector(threading.Thread):
                             pct = np.count_nonzero(confirm) * 100.0 / watched
                             if pct >= s.min_percent:
                                 fired_changed = confirm
-                                self._confirmed(pct, now)
+                                self._confirmed(pct, t)
+                            else:
+                                # A glitch: never let its frames become a reference.
+                                while history and history[-1][0] >= pending_since:
+                                    history.pop()
                             pending_ref = None
                     elif self.state.percent >= s.min_percent:
                         if s.confirm_frames <= 0:
                             fired_changed = changed
-                            self._confirmed(self.state.percent, now)
+                            self._confirmed(self.state.percent, t)
                         else:
-                            pending_ref = prev
+                            pending_ref = ref
+                            pending_since = t
                             pending_left = s.confirm_frames
-                prev = gray
+                history.append((t, gray))
+                while len(history) > 1 and t - history[1][0] >= s.compare_seconds:
+                    history.popleft()
 
                 if (self.state.motion and self.state.last_motion is not None
-                        and now - self.state.last_motion > s.hold_seconds):
+                        and t - self.state.last_motion > s.hold_seconds):
                     self._end_motion()
 
                 with self._lock:
