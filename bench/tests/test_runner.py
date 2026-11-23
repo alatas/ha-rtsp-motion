@@ -109,10 +109,32 @@ def test_parallel_limits_concurrency():
 
 def test_parallel_runs_overlap():
     names = ["quiet_night", "clock_corner"]
-    single = SCENARIOS[names[0]].duration + 10
+    single = max(SCENARIOS[n].duration for n in names) + 10
     t = time.monotonic()
     rows = run_jobs([(n, lambda n=n: run_scenario(n)) for n in names], 2)
     wall = time.monotonic() - t
     assert [r["scenario"] for r in rows] == names
     assert wall < 1.5 * single
     assert all(r["connected"] >= 1 for r in rows)
+
+
+def test_report_flags_timing_skew(tmp_path):
+    from runner.report import write_report
+    base = {"truth": 0, "hits": 0, "misses": 0, "false_alarms": 0, "stuck": 0, "lost": 0,
+            "median_delay": None, "fps": 15.0, "passed": True}
+    rows = [dict(base, scenario="a", connect_offset=3.0),
+            dict(base, scenario="b", connect_offset=3.2),
+            dict(base, scenario="c", connect_offset=3.1),
+            dict(base, scenario="late", connect_offset=4.5, passed=False)]
+    write_report(rows, str(tmp_path / "r.md"), str(tmp_path / "r.json"))
+    lines = (tmp_path / "r.md").read_text().splitlines()
+    assert "connect offset" in lines[0]
+    by = {ln.split("|")[1].strip(): ln for ln in lines[2:]}
+    assert "4.50s" in by["late"] and "timing skew" in by["late"]
+    assert "timing skew" not in by["a"] and "timing skew" not in by["c"]
+
+
+def test_parallel_on_done_gets_each_finished_row():
+    done = []
+    run_jobs([_fake("x", 0.2), _fake("y", 0.0)], 2, on_done=lambda r: done.append(r["scenario"]))
+    assert done == ["y", "x"]
