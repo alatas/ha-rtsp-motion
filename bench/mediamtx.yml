@@ -35,7 +35,9 @@ paths:
     runOnDemandRestart: yes
     runOnDemandStartTimeout: 15s
     runOnDemandCloseAfter: 5s
-  "~^synthetic-once/(.+)$":
+  # <scenario>/<per-run token>: the token makes every run its own path, so a run never
+  # attaches to the previous run's publisher (kept alive by runOnDemandCloseAfter).
+  "~^synthetic-once/([^/]+)/.+$":
     runOnDemand: python -m fakecam.publish --scenario $G1 --once --url rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH
     runOnDemandRestart: yes
     runOnDemandStartTimeout: 15s
@@ -45,7 +47,7 @@ paths:
     runOnDemandRestart: yes
     runOnDemandStartTimeout: 15s
     runOnDemandCloseAfter: 5s
-  "~^virat-once/(.+)$":
+  "~^virat-once/([^/]+)/.+$":
     runOnDemand: python -m fakecam.publish --file /data/virat/videos/$G1.mp4 --once --url rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH
     runOnDemandRestart: yes
     runOnDemandStartTimeout: 15s

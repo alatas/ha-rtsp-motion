@@ -4,6 +4,7 @@ from __future__ import annotations
 import statistics
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 
 from custom_components.rtsp_motion.detector import Callbacks, DetectorState, DetectorSettings, MotionDetector
@@ -14,8 +15,16 @@ BASE = "rtsp://bench:benchpass@rtsp:8554"
 JOIN_TIMEOUT = MotionDetector.OPEN_TIMEOUT + 5
 
 
+def run_token() -> str:
+    return uuid.uuid4().hex[:12]
+
+
 def url_for(name: str, once: bool = True) -> str:
-    return f"{BASE}/{'synthetic-once' if once else 'synthetic'}/{name}"
+    """once=True: a unique path per call (synthetic-once/<name>/<token>), so the run
+    always starts the scenario at t=0 instead of attaching to a lingering publisher."""
+    if once:
+        return f"{BASE}/synthetic-once/{name}/{run_token()}"
+    return f"{BASE}/synthetic/{name}"
 
 
 @dataclass
@@ -32,6 +41,8 @@ class Recording:
     pre_connect: list[tuple[str, float | None]] = field(default_factory=list)
     # DetectorState.fps samples from on_update (about one per second, 0 when down).
     fps_samples: list[float] = field(default_factory=list)
+    # Set when the run itself went wrong (not a detector finding).
+    error: str | None = None
 
     def count(self, kind: str) -> int:
         n = sum(1 for e in self.events if e[1] == kind)
@@ -101,9 +112,10 @@ def run_stream(url: str, settings: DetectorSettings, seconds: float) -> Recordin
     finally:
         det.stop()
         det.join(JOIN_TIMEOUT)
+    error = "detector thread did not stop" if det.is_alive() else None
     with rec._lock:
         offset = (rec.t0 - rec.started) if rec.t0 is not None else None
-        return Recording(list(rec.events), offset, list(rec.pre), list(rec.fps))
+        return Recording(list(rec.events), offset, list(rec.pre), list(rec.fps), error)
 
 
 def score_recording(name: str, truth: list, rec: Recording, settings: DetectorSettings,
@@ -114,11 +126,14 @@ def score_recording(name: str, truth: list, rec: Recording, settings: DetectorSe
     s = score(truth, motions, settings.hold_seconds)
     fps = statistics.median(rec.fps_samples) if rec.fps_samples else None
     delay = statistics.median(s.delays) if s.delays else None
-    return {"scenario": name, "truth": len(truth), "hits": s.hits, "misses": s.misses,
+    row = {"scenario": name, "truth": len(truth), "hits": s.hits, "misses": s.misses,
             "false_alarms": s.false_alarms, "stuck": s.stuck, "lost": rec.count("lost"),
             "median_delay": delay, "fps": fps, "connected": connected,
             "connect_offset": rec.connect_offset, "delays": s.delays, "motions": motions,
             "events": rec.events, "pre_connect": rec.pre_connect, "run_seconds": seconds}
+    if rec.error:
+        row["error"] = rec.error
+    return row
 
 
 def run_scenario(name: str) -> dict:
@@ -129,5 +144,6 @@ def run_scenario(name: str) -> dict:
     row = score_recording(name, sc.truth, rec, settings, seconds)
     row["passed"] = (row["connected"] >= 1 and row["misses"] == 0
                      and row["false_alarms"] <= sc.expect.max_false_alarms
-                     and row["stuck"] == 0 and row["lost"] == sc.expect.video_lost)
+                     and row["stuck"] == 0 and row["lost"] == sc.expect.video_lost
+                     and not row.get("error"))
     return row

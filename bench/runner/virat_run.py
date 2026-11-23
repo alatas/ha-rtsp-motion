@@ -7,7 +7,7 @@ from pathlib import Path
 import av
 
 from custom_components.rtsp_motion.detector import DetectorSettings
-from runner.run_detector import BASE, run_stream, score_recording
+from runner.run_detector import BASE, run_stream, run_token, score_recording
 from runner.report import write_report
 
 NO_DATA = "No VIRAT data. Run: python -m virat.fetch --accept-virat-terms"
@@ -41,10 +41,10 @@ def run_clip(clip: str) -> dict:
     truth = json.loads((data_dir() / "truth" / f"{clip}.json").read_text())["truth"]
     settings = DetectorSettings()
     seconds = clip_seconds(clip) + EXTRA_SECONDS
-    rec = run_stream(f"{BASE}/virat-once/{clip}", settings, seconds)
+    rec = run_stream(f"{BASE}/virat-once/{clip}/{run_token()}", settings, seconds)
     row = score_recording(clip, [tuple(t) for t in truth], rec, settings, seconds)
-    row["passed"] = row["connected"] >= 1  # a measurement: only a dead stream is an error
-    if not row["passed"]:
+    row["passed"] = row["connected"] >= 1 and not row.get("error")  # a measurement: only a dead stream is an error
+    if row["connected"] < 1:
         row["error"] = "never connected"
     return row
 

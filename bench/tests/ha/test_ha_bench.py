@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+import uuid
 
 import pytest
 
@@ -26,7 +27,7 @@ def entry_data(name="night_walker", password="benchpass", path=None):
     return {
         CONF_HOST: "rtsp",
         CONF_PORT: 8554,
-        CONF_PATH: path or f"synthetic-once/{name}",
+        CONF_PATH: path or f"synthetic-once/{name}/{uuid.uuid4().hex[:12]}",
         CONF_USERNAME: "bench",
         CONF_PASSWORD: password,
     }
@@ -57,7 +58,8 @@ async def test_flow_missing_path(hass):
 
 
 class Recorder:
-    """Collects bus events with times relative to the first video_connected."""
+    """Collects bus events. Event times are relative to the first video_connected (origin);
+    t0 is the setup start, so `time - t0` gives times relative to setup start."""
 
     def __init__(self, hass):
         self.origin = None
@@ -139,8 +141,11 @@ async def test_freeze_long_events(hass):
         await asyncio.wait_for(rec.connected.wait(), 20)
         await asyncio.sleep(SCENARIO_SECONDS - 10)
     finally:
-        assert await hass.config_entries.async_unload(entry.entry_id)
+        # No assert here: it would be swallowed as the xfail's AssertionError.
+        unloaded = await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
+    if not unloaded:
+        raise RuntimeError("config entry did not unload")  # not the known finding
     print("freeze_long events:", rec.events)
     types = rec.types()
     assert "video_connected" in types, rec.events

@@ -16,10 +16,13 @@ def results_path(name: str) -> str:
 MAX_PARALLEL = 6  # above this the on-demand publishers start late and timing skews
 
 
-def virat_main(args) -> int:
+def virat_main(args, ap) -> int:
     from runner import virat_run
     clips = virat_run.list_clips(args.only, args.limit)
     if not clips:
+        known = virat_run.list_clips()
+        if args.only and known:
+            ap.error(f"unknown clip {args.only!r}; valid: {', '.join(known)}")
         print(virat_run.NO_DATA)
         return 0
     if args.parallel > MAX_PARALLEL:
@@ -34,7 +37,12 @@ def virat_main(args) -> int:
               + (f" ({row['error']})" if row.get("error") else ""), flush=True)
 
     jobs = [(c, lambda c=c: virat_run.run_clip(c)) for c in clips]
-    rows = run_jobs(jobs, args.parallel, on_row=save, on_done=done)
+    try:
+        rows = run_jobs(jobs, args.parallel, on_row=save, on_done=done)
+    except KeyboardInterrupt as err:
+        save(getattr(err, "rows", []))
+        print("interrupted: partial report written", file=sys.stderr, flush=True)
+        return 130
     save(rows)
     t = virat_run.totals(rows)
     print(f"{t['clips']} clips, hits {t['hits']}/{t['truth']}, false alarms {t['false_alarms']}, "
@@ -63,8 +71,11 @@ def main() -> int:
     if args.parallel < 1:
         ap.error("--parallel must be >= 1")
     if args.cmd == "virat":
-        return virat_main(args)
-    names = [args.only] if args.only else [n for n in SCENARIOS if n != "static"]
+        return virat_main(args, ap)
+    valid = [n for n in SCENARIOS if n != "static"]
+    if args.only and args.only not in valid:
+        ap.error(f"unknown scenario {args.only!r}; valid: {', '.join(valid)}")
+    names = [args.only] if args.only else valid
     t0 = time.monotonic()
 
     if args.parallel > MAX_PARALLEL:
@@ -82,10 +93,21 @@ def main() -> int:
               + (f" ({detail})" if detail else ""), flush=True)
 
     jobs = [(n, lambda n=n: run_scenario(n)) for n in names]
-    rows = run_jobs(jobs, args.parallel, on_row=save, on_done=done)
+    try:
+        rows = run_jobs(jobs, args.parallel, on_row=save, on_done=done)
+    except KeyboardInterrupt as err:
+        save(getattr(err, "rows", []))
+        print("interrupted: partial report written", file=sys.stderr, flush=True)
+        return 130
     print(f"wall time {time.monotonic() - t0:.0f} s, parallel {args.parallel}", flush=True)
     return 0 if all(r["passed"] for r in rows) else 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    rc = main()
+    if rc == 130:
+        # Running jobs are threads that cannot be killed; do not wait for them.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(rc)
+    sys.exit(rc)

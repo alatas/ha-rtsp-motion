@@ -7,7 +7,8 @@ what it reports against the truth: did it see the motion, how late, and did it r
 false alarms or get stuck. A second layer runs the integration inside Home Assistant
 against the same camera.
 
-Everything runs in one image (`bench/Dockerfile`, Python 3.14 plus mediamtx). The repo
+Everything runs in one image (`bench/Dockerfile`, Python 3.14 plus mediamtx, versions
+pinned). The repo
 is mounted into the containers, so code changes need no rebuild.
 
 ## Quick start
@@ -21,7 +22,7 @@ Results are written to `bench/results/`: `synthetic.md` and `synthetic.json`
 (`virat.md` and `virat.json` for the VIRAT run). Set the environment variable
 `BENCH_RESULTS_DIR` to write somewhere else.
 
-- `--only NAME` runs one scenario.
+- `--only NAME` runs one scenario (an unknown name lists the valid ones).
 - `--parallel N` runs N scenarios at once (default 1; the full set takes about 2.5
   minutes at 6). Above 6 the on-demand publishers start late and timing skews: the
   runner warns, and rows whose connect offset is far from the median are flagged
@@ -62,11 +63,35 @@ it; it is not part of the synthetic run.
 
 Notes on what the bench can and cannot do:
 
+- Streams that play once are read from `synthetic-once/<scenario>/<token>` and
+  `virat-once/<clip>/<token>`. The runner appends a fresh token to every run, so each run
+  gets its own publisher that starts at t=0 (mediamtx keeps a publisher for 5 s after
+  its last reader leaves, and reconnects need that). Looping streams stay at
+  `synthetic/<scenario>` and `virat/<clip>`.
+- Ctrl-C stops a run, writes the report for the jobs that finished and exits with 130.
+
 - A backward timestamp jump cannot happen inside one RTSP session, because ffmpeg's
   muxer refuses it. `pts_back` is therefore a session restart with an earlier clock.
 - mediamtx answers `400` for paths it has no configuration for. The bench configures
   `nothing/...` as a never-published path so that a missing stream gets `404`, like a
   real camera does.
+
+## Known findings
+
+The synthetic run currently fails 5 scenarios. They are findings about the integration,
+to be fixed separately; the bench is reporting them correctly. Until then the CI job and
+its stages are `continue-on-error`.
+
+- `lights_on`: missed. The whole-picture brightening is not detected.
+- `glitch_burst`: 1 false alarm from the one-frame white glitches.
+- `freeze_long`: `video_lost` never fires. `av.open` blocks while the session is open
+  but silent, so `LOST_GRACE` never runs. (The `freeze_long` tests are strict xfails for
+  the same reason.)
+- `pts_back`: motion stays stuck after a restart with an earlier clock.
+- `low_fps`: motion stuck, plus a 6 s delay at 2 fps.
+- mediamtx answers `400` (not `404`) for paths it has no configuration for, and the
+  integration maps only `404` to `stream_not_found`. The bench works around it with the
+  `nothing/...` path.
 
 ## How scoring works
 

@@ -1,4 +1,5 @@
 import threading
+import uuid
 import time
 from pathlib import Path
 
@@ -71,7 +72,7 @@ def test_scenario_paths_serve_each_scenario(name):
 
 
 def test_once_path_serves_frames():
-    frames = open_frames(f"{BASE}/synthetic-once/quiet_night", 5)
+    frames = open_frames(f"{BASE}/synthetic-once/quiet_night/{uuid.uuid4().hex[:12]}", 5)
     assert len(frames) == 5
 
 

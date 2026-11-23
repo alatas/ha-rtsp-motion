@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import json
 import sys
@@ -30,11 +31,14 @@ def test_quiet_night_has_no_alarm():
     assert not [e for e in rec.events if e[1] == "start"]
 
 
-@pytest.mark.xfail(strict=True, reason=(
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
     "integration finding: av.open blocks until video resumes, so the LOST_GRACE check "
     "never runs during a frozen-but-open session (no `lost` event)"))
 def test_freeze_long_reports_lost_once():
     _sc, rec = _run("freeze_long")
+    # Setup problems must fail loudly (not as AssertionError), not count as the finding.
+    if rec.count("connected") < 1:
+        raise RuntimeError("never connected: not the known finding")
     kinds = [e[1] for e in rec.events]
     assert rec.count("lost") == 1
     assert "connected" in kinds[kinds.index("lost"):]
@@ -140,6 +144,95 @@ def test_parallel_on_done_gets_each_finished_row():
     done = []
     run_jobs([_fake("x", 0.2), _fake("y", 0.0)], 2, on_done=lambda r: done.append(r["scenario"]))
     assert done == ["y", "x"]
+
+
+def test_parallel_keyboard_interrupt_returns_partial_rows():
+    release = threading.Event()
+
+    def slow(name):
+        def job():
+            release.wait(10)
+            return {"scenario": name, "passed": True}
+        return name, job
+
+    def on_done(row):
+        if row["scenario"] == "fast":
+            raise KeyboardInterrupt  # simulates Ctrl-C arriving in the main thread
+
+    jobs = [_fake("fast", 0.0), slow("slow1"), slow("slow2"), slow("slow3")]
+    t = time.monotonic()
+    try:
+        with pytest.raises(KeyboardInterrupt) as ei:
+            run_jobs(jobs, 2, on_done=on_done)
+        assert time.monotonic() - t < 3  # did not wait for the running and queued slow jobs
+        assert ei.value.rows == [{"scenario": "fast", "passed": True}]
+    finally:
+        release.set()
+        deadline = time.monotonic() + 5  # let the pool threads finish before teardown checks
+        while time.monotonic() < deadline and any(
+                th.name.startswith("ThreadPoolExecutor") for th in threading.enumerate()):
+            time.sleep(0.05)
+
+
+def test_cli_exits_130_on_interrupt_and_writes_partial_report(tmp_path, monkeypatch):
+    from runner import __main__ as cli
+    monkeypatch.setenv("BENCH_RESULTS_DIR", str(tmp_path))
+    monkeypatch.setattr(cli, "run_scenario", lambda n: {"scenario": n, "passed": True})
+
+    def boom(jobs, parallel, on_row=None, on_done=None):
+        err = KeyboardInterrupt()
+        err.rows = [{"scenario": "a", "passed": True, "truth": 0, "hits": 0, "misses": 0,
+                     "false_alarms": 0, "stuck": 0, "lost": 0, "median_delay": None,
+                     "fps": 15.0, "connect_offset": 3.0}]
+        raise err
+
+    monkeypatch.setattr(cli, "run_jobs", boom)
+    monkeypatch.setattr(sys, "argv", ["runner", "synthetic", "--parallel", "2"])
+    assert cli.main() == 130
+    assert "| a" in (tmp_path / "synthetic.md").read_text()
+
+
+def test_url_for_once_is_unique_per_run():
+    a, b = url_for("night_walker"), url_for("night_walker")
+    assert a != b
+    for u in (a, b):
+        assert re.fullmatch(r"rtsp://bench:benchpass@rtsp:8554/synthetic-once/night_walker/[0-9a-f]{12}", u)
+    assert url_for("night_walker", once=False).endswith("/synthetic/night_walker")
+
+
+def test_mediamtx_once_paths_take_scenario_and_token():
+    cfg = (Path(__file__).resolve().parents[1] / "mediamtx.yml").read_text()
+    assert '"~^synthetic-once/([^/]+)/.+$"' in cfg
+    assert '"~^virat-once/([^/]+)/.+$"' in cfg
+
+
+def test_unknown_names_are_rejected_by_the_cli(tmp_path):
+    env = dict(os.environ, BENCH_VIRAT_DIR=str(tmp_path), BENCH_RESULTS_DIR=str(tmp_path))
+    r = subprocess.run([sys.executable, "-m", "runner", "synthetic", "--only", "typo"],
+                       cwd=_bench(), capture_output=True, text=True, env=env)
+    assert r.returncode == 2 and "typo" in r.stderr and "night_walker" in r.stderr
+    (tmp_path / "truth").mkdir()
+    (tmp_path / "truth" / "real.json").write_text("{}")
+    r = subprocess.run([sys.executable, "-m", "runner", "virat", "--only", "typo"],
+                       cwd=_bench(), capture_output=True, text=True, env=env)
+    assert r.returncode == 2 and "unknown clip" in r.stderr and "real" in r.stderr
+
+
+def test_detector_that_does_not_stop_is_an_error_row(monkeypatch):
+    from runner import run_detector as rd
+
+    class Stuck:
+        def __init__(self, *a, **k): pass
+        def start(self): pass
+        def stop(self): pass
+        def join(self, timeout=None): pass
+        def is_alive(self): return True
+
+    monkeypatch.setattr(rd, "MotionDetector", Stuck)
+    rec = rd.run_stream("rtsp://x/y", DetectorSettings(), 0.01)
+    assert rec.error == "detector thread did not stop"
+    row = rd.score_recording("x", [], rec, DetectorSettings(), 0.01)
+    assert row["error"] == "detector thread did not stop"
 
 
 # ---- VIRAT report ----------------------------------------------------------
