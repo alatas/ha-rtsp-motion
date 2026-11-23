@@ -138,3 +138,93 @@ def test_parallel_on_done_gets_each_finished_row():
     done = []
     run_jobs([_fake("x", 0.2), _fake("y", 0.0)], 2, on_done=lambda r: done.append(r["scenario"]))
     assert done == ["y", "x"]
+
+
+# ---- VIRAT report ----------------------------------------------------------
+
+import os
+
+NO_DATA = "No VIRAT data. Run: python -m virat.fetch --accept-virat-terms"
+
+
+def _bench():
+    return Path(__file__).resolve().parents[1]
+
+
+def test_virat_cli_skips_without_data(tmp_path):
+    env = dict(os.environ, BENCH_VIRAT_DIR=str(tmp_path))
+    r = subprocess.run([sys.executable, "-m", "runner", "virat"], cwd=_bench(),
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.strip() == NO_DATA
+
+
+def test_virat_totals():
+    from runner.virat_run import totals
+    rows = [
+        {"scenario": "a", "truth": 2, "hits": 2, "misses": 0, "false_alarms": 1, "stuck": 0,
+         "delays": [1.0, 3.0], "run_seconds": 1800.0, "passed": True},
+        {"scenario": "b", "truth": 3, "hits": 1, "misses": 2, "false_alarms": 1, "stuck": 1,
+         "delays": [2.0], "run_seconds": 1800.0, "passed": True},
+    ]
+    t = totals(rows)
+    assert t["clips"] == 2 and t["truth"] == 5 and t["hits"] == 3
+    assert t["hit_rate"] == pytest.approx(0.6)
+    assert t["median_delay"] == pytest.approx(2.0)
+    assert t["false_alarms"] == 2 and t["stuck"] == 1
+    assert t["false_alarms_per_hour"] == pytest.approx(2.0)
+
+
+def test_virat_report_has_totals_and_footer(tmp_path):
+    from runner.virat_run import write_virat_report
+    rows = [{"scenario": "a", "truth": 1, "hits": 1, "misses": 0, "false_alarms": 0, "stuck": 0,
+             "lost": 0, "median_delay": 1.0, "fps": 10.0, "connect_offset": 3.0, "delays": [1.0],
+             "run_seconds": 60.0, "passed": True, "connected": 1},
+            {"scenario": "dead", "truth": 1, "run_seconds": 60.0, "passed": False,
+             "connected": 0, "connect_offset": None, "delays": []}]
+    write_virat_report(rows, str(tmp_path / "v.md"), str(tmp_path / "v.json"))
+    md = (tmp_path / "v.md").read_text()
+    assert "Truth comes from VIRAT object annotations (moving boxes only, > 2% of frame width per second); it starts up to ~1 s late and ignores very slow movers." in md
+    assert "hit rate" in md and "false alarms per hour" in md
+    dead = [ln for ln in md.splitlines() if ln.startswith("| dead")][0]
+    assert "ERROR" in dead
+    js = json.loads((tmp_path / "v.json").read_text())
+    assert js["totals"]["clips"] == 2 and len(js["rows"]) == 2
+
+
+def test_virat_cli_runs_a_fake_clip():
+    """Happy path with a fake clip (not VIRAT data) written to the shared volume."""
+    import av
+    import numpy as np
+    clip = "FAKE_TEST_CLIP"
+    root = Path("/data/virat")
+    video, truth = root / "videos" / f"{clip}.mp4", root / "truth" / f"{clip}.json"
+    (root / "videos").mkdir(parents=True, exist_ok=True)
+    (root / "truth").mkdir(parents=True, exist_ok=True)
+    try:
+        c = av.open(str(video), "w")
+        s = c.add_stream("libx264", rate=15)
+        s.width, s.height, s.pix_fmt = 320, 240, "yuv420p"
+        rng = np.random.default_rng(1)
+        for i in range(15 * 20):
+            img = np.full((240, 320, 3), 60, np.uint8)
+            if 150 <= i < 240:
+                img[:, :] = rng.integers(0, 255, (240, 320, 3), dtype=np.uint8)
+            for p in s.encode(av.VideoFrame.from_ndarray(img, format="rgb24")):
+                c.mux(p)
+        for p in s.encode():
+            c.mux(p)
+        c.close()
+        truth.write_text(json.dumps({"fps": 15.0, "width": 320, "truth": [[10.0, 16.0]]}))
+        out = _bench() / "results"
+        r = subprocess.run([sys.executable, "-m", "runner", "virat", "--only", clip],
+                           cwd=_bench(), capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        js = json.loads((out / "virat.json").read_text())
+        assert js["totals"]["clips"] == 1
+        row = js["rows"][0]
+        assert row["scenario"] == clip and row["connected"] >= 1
+        assert clip in (out / "virat.md").read_text()
+    finally:
+        video.unlink(missing_ok=True)
+        truth.unlink(missing_ok=True)

@@ -10,6 +10,32 @@ from runner.run_detector import run_scenario
 MAX_PARALLEL = 6  # above this the on-demand publishers start late and timing skews
 
 
+def virat_main(args) -> int:
+    from runner import virat_run
+    clips = virat_run.list_clips(args.only, args.limit)
+    if not clips:
+        print(virat_run.NO_DATA)
+        return 0
+    if args.parallel > MAX_PARALLEL:
+        print(f"warning: --parallel {args.parallel} is above {MAX_PARALLEL}; timing skews",
+              file=sys.stderr, flush=True)
+
+    def save(rows: list[dict]) -> None:
+        virat_run.write_virat_report(rows, "results/virat.md", "results/virat.json")
+
+    def done(row: dict) -> None:
+        print(f"{row['scenario']}: {'ok' if row['passed'] else 'ERROR'}"
+              + (f" ({row['error']})" if row.get("error") else ""), flush=True)
+
+    jobs = [(c, lambda c=c: virat_run.run_clip(c)) for c in clips]
+    rows = run_jobs(jobs, args.parallel, on_row=save, on_done=done)
+    save(rows)
+    t = virat_run.totals(rows)
+    print(f"{t['clips']} clips, hits {t['hits']}/{t['truth']}, false alarms {t['false_alarms']}, "
+          f"stuck {t['stuck']}", flush=True)
+    return 0  # measurements, not pass/fail
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="runner")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -19,10 +45,17 @@ def main() -> int:
                      help="run up to N scenarios at the same time (default 1). Above 6 the "
                           "on-demand publishers start late and timing skews: see the connect "
                           "offset column")
+    vir = sub.add_parser("virat", help="measure the detector on VIRAT clips (no pass/fail)")
+    vir.add_argument("--only", help="run just this clip")
+    vir.add_argument("--limit", type=int, metavar="N", help="run at most N clips")
+    vir.add_argument("--parallel", type=int, default=1, metavar="N",
+                     help="run up to N clips at the same time (default 1; above 6 timing skews)")
     args = ap.parse_args()
 
     if args.parallel < 1:
         ap.error("--parallel must be >= 1")
+    if args.cmd == "virat":
+        return virat_main(args)
     names = [args.only] if args.only else [n for n in SCENARIOS if n != "static"]
     t0 = time.monotonic()
 

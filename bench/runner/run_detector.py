@@ -106,20 +106,28 @@ def run_stream(url: str, settings: DetectorSettings, seconds: float) -> Recordin
         return Recording(list(rec.events), offset, list(rec.pre), list(rec.fps))
 
 
+def score_recording(name: str, truth: list, rec: Recording, settings: DetectorSettings,
+                    seconds: float) -> dict:
+    """The row fields shared by synthetic and VIRAT runs (no pass/fail verdict)."""
+    connected = rec.count("connected")
+    motions = rec.motions(rec.connect_offset or 0.0)
+    s = score(truth, motions, settings.hold_seconds)
+    fps = statistics.median(rec.fps_samples) if rec.fps_samples else None
+    delay = statistics.median(s.delays) if s.delays else None
+    return {"scenario": name, "truth": len(truth), "hits": s.hits, "misses": s.misses,
+            "false_alarms": s.false_alarms, "stuck": s.stuck, "lost": rec.count("lost"),
+            "median_delay": delay, "fps": fps, "connected": connected,
+            "connect_offset": rec.connect_offset, "delays": s.delays, "motions": motions,
+            "events": rec.events, "pre_connect": rec.pre_connect, "run_seconds": seconds}
+
+
 def run_scenario(name: str) -> dict:
     sc = SCENARIOS[name]
     settings = DetectorSettings()
-    rec = run_stream(url_for(name), settings, sc.duration + 10)
-    connected = rec.count("connected")
-    motions = rec.motions(rec.connect_offset or 0.0)
-    s = score(sc.truth, motions, settings.hold_seconds)
-    lost = rec.count("lost")
-    fps = statistics.median(rec.fps_samples) if rec.fps_samples else None
-    delay = statistics.median(s.delays) if s.delays else None
-    ok = (connected >= 1 and s.misses == 0 and s.false_alarms <= sc.expect.max_false_alarms
-          and s.stuck == 0 and lost == sc.expect.video_lost)
-    return {"scenario": name, "truth": len(sc.truth), "hits": s.hits, "misses": s.misses,
-            "false_alarms": s.false_alarms, "stuck": s.stuck, "lost": lost,
-            "median_delay": delay, "fps": fps, "passed": ok, "connected": connected,
-            "connect_offset": rec.connect_offset, "delays": s.delays, "motions": motions,
-            "events": rec.events, "pre_connect": rec.pre_connect}
+    seconds = sc.duration + 10
+    rec = run_stream(url_for(name), settings, seconds)
+    row = score_recording(name, sc.truth, rec, settings, seconds)
+    row["passed"] = (row["connected"] >= 1 and row["misses"] == 0
+                     and row["false_alarms"] <= sc.expect.max_false_alarms
+                     and row["stuck"] == 0 and row["lost"] == sc.expect.video_lost)
+    return row
