@@ -1,0 +1,26 @@
+services:
+  rtsp:
+    build:
+      context: ..
+      dockerfile: bench/Dockerfile
+    image: rtsp-motion-bench:latest
+    command: ["mediamtx", "/repo/bench/mediamtx.yml"]
+    working_dir: /repo/bench
+    environment:
+      PYTHONPATH: /repo:/repo/bench
+    volumes:
+      - ..:/repo
+      - virat-data:/data/virat
+  runner:
+    image: rtsp-motion-bench:latest
+    depends_on:
+      - rtsp
+    working_dir: /repo/bench
+    environment:
+      PYTHONPATH: /repo:/repo/bench
+    volumes:
+      - ..:/repo
+      - virat-data:/data/virat
+
+volumes:
+  virat-data:
