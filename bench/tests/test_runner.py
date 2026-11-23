@@ -1,3 +1,4 @@
+import os
 import subprocess
 import json
 import sys
@@ -39,13 +40,14 @@ def test_freeze_long_reports_lost_once():
     assert "connected" in kinds[kinds.index("lost"):]
 
 
-def test_cli_writes_report():
+def test_cli_writes_report(tmp_path):
     bench = Path(__file__).resolve().parents[1]
     r = subprocess.run([sys.executable, "-m", "runner", "synthetic", "--only", "quiet_night"],
-                       cwd=bench, capture_output=True, text=True)
+                       cwd=bench, capture_output=True, text=True,
+                       env=dict(os.environ, BENCH_RESULTS_DIR=str(tmp_path)))
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "quiet_night" in (bench / "results" / "synthetic.md").read_text()
-    row = json.loads((bench / "results" / "synthetic.json").read_text())[0]
+    assert "quiet_night" in (tmp_path / "synthetic.md").read_text()
+    row = json.loads((tmp_path / "synthetic.json").read_text())[0]
     assert row["connected"] >= 1 and row["connect_offset"] is not None
     assert row["passed"]
 
@@ -192,12 +194,14 @@ def test_virat_report_has_totals_and_footer(tmp_path):
     assert js["totals"]["clips"] == 2 and len(js["rows"]) == 2
 
 
-def test_virat_cli_runs_a_fake_clip():
+def test_virat_cli_runs_a_fake_clip(tmp_path):
     """Happy path with a fake clip (not VIRAT data) written to the shared volume."""
     import av
     import numpy as np
-    clip = "FAKE_TEST_CLIP"
+    import uuid
+    clip = f"FAKE_TEST_{uuid.uuid4().hex[:8]}"
     root = Path("/data/virat")
+    results_dir = tmp_path / "res"
     video, truth = root / "videos" / f"{clip}.mp4", root / "truth" / f"{clip}.json"
     (root / "videos").mkdir(parents=True, exist_ok=True)
     (root / "truth").mkdir(parents=True, exist_ok=True)
@@ -216,9 +220,10 @@ def test_virat_cli_runs_a_fake_clip():
             c.mux(p)
         c.close()
         truth.write_text(json.dumps({"fps": 15.0, "width": 320, "truth": [[10.0, 16.0]]}))
-        out = _bench() / "results"
+        out = results_dir
+        env = dict(os.environ, BENCH_RESULTS_DIR=str(out))
         r = subprocess.run([sys.executable, "-m", "runner", "virat", "--only", clip],
-                           cwd=_bench(), capture_output=True, text=True)
+                           cwd=_bench(), capture_output=True, text=True, env=env)
         assert r.returncode == 0, r.stdout + r.stderr
         js = json.loads((out / "virat.json").read_text())
         assert js["totals"]["clips"] == 1
@@ -228,3 +233,23 @@ def test_virat_cli_runs_a_fake_clip():
     finally:
         video.unlink(missing_ok=True)
         truth.unlink(missing_ok=True)
+
+
+def test_virat_list_clips_hides_fake_and_limit_rejects_zero(tmp_path, monkeypatch):
+    from runner import virat_run
+    (tmp_path / "truth").mkdir()
+    for n in ("a", "FAKE_x"):
+        (tmp_path / "truth" / f"{n}.json").write_text("{}")
+    monkeypatch.setenv("BENCH_VIRAT_DIR", str(tmp_path))
+    assert virat_run.list_clips() == ["a"]
+    assert virat_run.list_clips("FAKE_x") == ["FAKE_x"]
+    r = subprocess.run([sys.executable, "-m", "runner", "virat", "--limit", "0"],
+                       cwd=_bench(), capture_output=True, text=True)
+    assert r.returncode == 2 and "--limit" in r.stderr
+
+
+def test_report_shows_error_cause(tmp_path):
+    from runner.virat_run import write_virat_report
+    write_virat_report([{"scenario": "d", "passed": False, "error": "never connected"}],
+                       str(tmp_path / "v.md"), str(tmp_path / "v.json"))
+    assert "ERROR: never connected" in (tmp_path / "v.md").read_text()

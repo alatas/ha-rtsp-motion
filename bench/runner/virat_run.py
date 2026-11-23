@@ -24,6 +24,8 @@ def list_clips(only: str | None = None, limit: int | None = None) -> list[str]:
     names = sorted(p.stem for p in (data_dir() / "truth").glob("*.json"))
     if only:
         names = [n for n in names if n == only]
+    else:  # test fixtures (FAKE_*) run only when asked for by name
+        names = [n for n in names if not n.startswith("FAKE_")]
     return names[:limit] if limit else names
 
 
@@ -42,6 +44,8 @@ def run_clip(clip: str) -> dict:
     rec = run_stream(f"{BASE}/virat-once/{clip}", settings, seconds)
     row = score_recording(clip, [tuple(t) for t in truth], rec, settings, seconds)
     row["passed"] = row["connected"] >= 1  # a measurement: only a dead stream is an error
+    if not row["passed"]:
+        row["error"] = "never connected"
     return row
 
 

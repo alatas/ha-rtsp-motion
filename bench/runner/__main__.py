@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import time
 
@@ -6,6 +7,11 @@ from fakecam.scenarios import SCENARIOS
 from runner.report import write_report
 from runner.parallel import run_jobs
 from runner.run_detector import run_scenario
+
+def results_path(name: str) -> str:
+    """Output files go to $BENCH_RESULTS_DIR (default results/), so tests can redirect them."""
+    return os.path.join(os.environ.get("BENCH_RESULTS_DIR", "results"), name)
+
 
 MAX_PARALLEL = 6  # above this the on-demand publishers start late and timing skews
 
@@ -21,7 +27,7 @@ def virat_main(args) -> int:
               file=sys.stderr, flush=True)
 
     def save(rows: list[dict]) -> None:
-        virat_run.write_virat_report(rows, "results/virat.md", "results/virat.json")
+        virat_run.write_virat_report(rows, results_path("virat.md"), results_path("virat.json"))
 
     def done(row: dict) -> None:
         print(f"{row['scenario']}: {'ok' if row['passed'] else 'ERROR'}"
@@ -51,6 +57,8 @@ def main() -> int:
     vir.add_argument("--parallel", type=int, default=1, metavar="N",
                      help="run up to N clips at the same time (default 1; above 6 timing skews)")
     args = ap.parse_args()
+    if args.cmd == "virat" and args.limit is not None and args.limit < 1:
+        ap.error("--limit must be >= 1")
 
     if args.parallel < 1:
         ap.error("--parallel must be >= 1")
@@ -65,7 +73,7 @@ def main() -> int:
               file=sys.stderr, flush=True)
 
     def save(rows: list[dict]) -> None:
-        write_report(rows, "results/synthetic.md", "results/synthetic.json")
+        write_report(rows, results_path("synthetic.md"), results_path("synthetic.json"))
 
     def done(row: dict) -> None:
         keys = ("misses", "false_alarms", "stuck", "lost", "error")

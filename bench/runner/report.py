@@ -33,7 +33,7 @@ def write_report(rows: list[dict], md_path: str, json_path: str,
             "-" if d is None else f"{d:.2f}s",
             "-" if r.get("fps") is None else f"{r['fps']:.1f}",
             "-" if r.get("connect_offset") is None else f"{r['connect_offset']:.2f}s",
-            (labels[0] if r["passed"] else labels[1] + (" (error)" if r.get("error") else ""))
+            (labels[0] if r["passed"] else labels[1] + (f": {str(r['error'])[:60]}" if r.get("error") else ""))
             + (" (timing skew)" if i in skew else "")]) + " |")
     with open(md_path, "w") as f:
         f.write("\n".join(lines) + "\n")
