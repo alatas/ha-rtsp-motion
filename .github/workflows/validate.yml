@@ -30,3 +30,43 @@ jobs:
           python-version: "3.14"
       - run: pip install -r requirements_test.txt
       - run: pytest
+
+  bench:
+    # Fake-camera bench (bench/README.md). Informational until the known findings are fixed.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 40
+    env:
+      COMPOSE: docker compose -f bench/docker-compose.yml
+    steps:
+      - uses: actions/checkout@v5
+      - run: $COMPOSE build
+      - run: $COMPOSE up -d rtsp
+      - name: Wait for the RTSP server
+        run: |
+          $COMPOSE run --rm runner python -c "
+          import socket, time
+          for _ in range(30):
+              try:
+                  socket.create_connection(('rtsp', 8554), 1).close()
+                  break
+              except OSError:
+                  time.sleep(1)
+          else:
+              raise SystemExit('rtsp did not come up')
+          "
+      - name: Unit tests (no VIRAT data, no Home Assistant layer)
+        run: $COMPOSE run --rm runner pytest tests -v -m "not bench_ha"
+      - name: Synthetic scenarios
+        run: $COMPOSE run --rm runner python -m runner synthetic --parallel 6
+      - name: Home Assistant layer (about 2 minutes)
+        continue-on-error: true
+        run: $COMPOSE run --rm runner pytest tests/ha -v -m bench_ha
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-synthetic
+          path: bench/results/synthetic.*
+          if-no-files-found: warn
+      - run: $COMPOSE down -v
+        if: always()

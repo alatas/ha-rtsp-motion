@@ -113,6 +113,8 @@ pip install -r requirements_test.txt
 pytest
 ```
 
+A Docker fake-camera test bench (synthetic scenarios, optional VIRAT clips, Home Assistant layer) is described in [bench/README.md](bench/README.md).
+
 GitHub Actions run Home Assistant's `hassfest`, the HACS validator and the tests on
 every push.
 
