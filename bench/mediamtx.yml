@@ -29,3 +29,13 @@ paths:
     runOnDemandRestart: yes
     runOnDemandStartTimeout: 15s
     runOnDemandCloseAfter: 5s
+  "~^synthetic-once/(.+)$":
+    runOnDemand: python -m fakecam.publish --scenario $G1 --once --url rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH
+    runOnDemandRestart: yes
+    runOnDemandStartTimeout: 15s
+    runOnDemandCloseAfter: 5s
+  "~^virat/(.+)$":
+    runOnDemand: python -m fakecam.publish --file /data/virat/videos/$G1.mp4 --url rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH
+    runOnDemandRestart: yes
+    runOnDemandStartTimeout: 15s
+    runOnDemandCloseAfter: 5s
