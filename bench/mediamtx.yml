@@ -26,6 +26,10 @@ authInternalUsers:
       - action: publish
 
 paths:
+  # Configured but never published: DESCRIBE answers 404 like a real camera does for a
+  # missing stream (an unconfigured path gets 400 from mediamtx).
+  "~^nothing/.+$":
+    source: publisher
   "~^synthetic/(.+)$":
     runOnDemand: python -m fakecam.publish --scenario $G1 --url rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH
     runOnDemandRestart: yes
