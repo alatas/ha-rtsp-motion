@@ -48,3 +48,71 @@ def test_cli_writes_report():
     row = json.loads((bench / "results" / "synthetic.json").read_text())[0]
     assert row["connected"] >= 1 and row["connect_offset"] is not None
     assert row["passed"]
+
+
+# ---- parallel helper -------------------------------------------------------
+
+import threading
+import time
+
+from runner.parallel import run_jobs
+
+
+def _fake(name, pause=0.0, fail=False, log=None):
+    def job():
+        if log is not None:
+            log.append(("start", name))
+        time.sleep(pause)
+        if log is not None:
+            log.append(("end", name))
+        if fail:
+            raise RuntimeError("boom " + name)
+        return {"scenario": name, "passed": True}
+    return name, job
+
+
+def test_parallel_one_is_sequential():
+    log = []
+    jobs = [_fake(n, 0.05, log=log) for n in "abc"]
+    rows = run_jobs(jobs, 1)
+    assert [r["scenario"] for r in rows] == ["a", "b", "c"]
+    assert log == [("start", "a"), ("end", "a"), ("start", "b"), ("end", "b"),
+                   ("start", "c"), ("end", "c")]
+
+
+def test_parallel_keeps_order_and_survives_exceptions():
+    jobs = [_fake("slow", 0.3), _fake("bad", 0.0, fail=True), _fake("fast", 0.0)]
+    seen = []
+    rows = run_jobs(jobs, 3, on_row=lambda partial: seen.append(len(partial)))
+    assert [r["scenario"] for r in rows] == ["slow", "bad", "fast"]
+    assert rows[1]["passed"] is False and "boom bad" in rows[1]["error"]
+    assert rows[0]["passed"] and rows[2]["passed"]
+    assert seen and seen[-1] == 3  # on_row fired as results arrived
+
+
+def test_parallel_limits_concurrency():
+    active, peak, lock = 0, 0, threading.Lock()
+
+    def job():
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.1)
+        with lock:
+            active -= 1
+        return {"scenario": "x", "passed": True}
+
+    run_jobs([(str(i), job) for i in range(6)], 2)
+    assert peak == 2
+
+
+def test_parallel_runs_overlap():
+    names = ["quiet_night", "clock_corner"]
+    single = SCENARIOS[names[0]].duration + 10
+    t = time.monotonic()
+    rows = run_jobs([(n, lambda n=n: run_scenario(n)) for n in names], 2)
+    wall = time.monotonic() - t
+    assert [r["scenario"] for r in rows] == names
+    assert wall < 1.5 * single
+    assert all(r["connected"] >= 1 for r in rows)

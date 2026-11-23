@@ -6,7 +6,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from custom_components.rtsp_motion.detector import Callbacks, DetectorSettings, MotionDetector
+from custom_components.rtsp_motion.detector import Callbacks, DetectorState, DetectorSettings, MotionDetector
 from fakecam.scenarios import SCENARIOS
 from runner.score import score
 
@@ -30,6 +30,8 @@ class Recording:
     connect_offset: float | None = 0.0
     # (kind, value) events that arrived before the first connect (should not happen).
     pre_connect: list[tuple[str, float | None]] = field(default_factory=list)
+    # DetectorState.fps samples from on_update (about one per second, 0 when down).
+    fps_samples: list[float] = field(default_factory=list)
 
     def count(self, kind: str) -> int:
         n = sum(1 for e in self.events if e[1] == kind)
@@ -57,6 +59,7 @@ class _Recorder(Callbacks):
         self.t0: float | None = None
         self.started = time.monotonic()
         self.events: list[tuple[float, str, float | None]] = []
+        self.fps: list[float] = []
         self.pre: list[tuple[str, float | None]] = []
         self._lock = threading.Lock()
 
@@ -83,6 +86,11 @@ class _Recorder(Callbacks):
     def on_motion_end(self, peak_percent: float) -> None:
         self._add("end", peak_percent)
 
+    def on_update(self, state: DetectorState) -> None:
+        if state.connected and state.fps > 0:
+            with self._lock:
+                self.fps.append(state.fps)
+
 
 def run_stream(url: str, settings: DetectorSettings, seconds: float) -> Recording:
     rec = _Recorder()
@@ -95,7 +103,7 @@ def run_stream(url: str, settings: DetectorSettings, seconds: float) -> Recordin
         det.join(JOIN_TIMEOUT)
     with rec._lock:
         offset = (rec.t0 - rec.started) if rec.t0 is not None else None
-        return Recording(list(rec.events), offset, list(rec.pre))
+        return Recording(list(rec.events), offset, list(rec.pre), list(rec.fps))
 
 
 def run_scenario(name: str) -> dict:
@@ -106,11 +114,12 @@ def run_scenario(name: str) -> dict:
     motions = rec.motions(rec.connect_offset or 0.0)
     s = score(sc.truth, motions, settings.hold_seconds)
     lost = rec.count("lost")
+    fps = statistics.median(rec.fps_samples) if rec.fps_samples else None
     delay = statistics.median(s.delays) if s.delays else None
     ok = (connected >= 1 and s.misses == 0 and s.false_alarms <= sc.expect.max_false_alarms
           and s.stuck == 0 and lost == sc.expect.video_lost)
     return {"scenario": name, "truth": len(sc.truth), "hits": s.hits, "misses": s.misses,
             "false_alarms": s.false_alarms, "stuck": s.stuck, "lost": lost,
-            "median_delay": delay, "passed": ok, "connected": connected,
+            "median_delay": delay, "fps": fps, "passed": ok, "connected": connected,
             "connect_offset": rec.connect_offset, "delays": s.delays, "motions": motions,
             "events": rec.events, "pre_connect": rec.pre_connect}
