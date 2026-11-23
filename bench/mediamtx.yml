@@ -1,5 +1,7 @@
 logLevel: info
 rtspAddress: :8554
+readTimeout: 60s
+writeTimeout: 60s
 rtmp: no
 hls: no
 webrtc: no
