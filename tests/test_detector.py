@@ -1,4 +1,6 @@
 """Detector tests on a generated video file (no camera, no Home Assistant)."""
+import time
+
 import av
 import numpy as np
 
@@ -116,6 +118,76 @@ def test_slow_movement_needs_the_time_gap(tmp_path):
     # Against the frame from 0.5 s earlier the whole movement counts.
     events, _ = run(path, DetectorSettings(hold_seconds=0, compare_seconds=0.5))
     assert any(kind == "start" for kind, _ in events)
+
+
+def test_redact_hides_credentials():
+    from custom_components.rtsp_motion.detector import redact
+
+    msg = ("ExitError: Immediate exit requested: 'rtsp://user:p%40ss@192.0.2.10:554/live0'; "
+           "last error log: [h264] error")
+    out = redact(msg)
+    assert "user" not in out and "p%40ss" not in out
+    assert "rtsp://***@192.0.2.10:554/live0" in out
+    assert redact("rtsp://192.0.2.10/live0") == "rtsp://192.0.2.10/live0"
+
+
+class _FlakyDetector(MotionDetector):
+    """run() against a scripted sequence of stream sessions instead of a camera."""
+
+    RETRY_DELAY = 0.02
+    LOST_GRACE = 0.3
+
+    def __init__(self, sessions, callbacks):
+        super().__init__("rtsp://user:secret@192.0.2.10/live0", DetectorSettings(), callbacks)
+        self.sessions = list(sessions)
+
+    def _read_stream(self):
+        if not self.sessions:
+            self.stop()
+            raise OSError("done")
+        kind = self.sessions.pop(0)
+        if kind == "ok":  # got video, then the stream broke
+            self._lost_at = None
+            if not self.state.connected:
+                self.state.connected = True
+                self.callbacks.on_connected()
+            raise OSError("Immediate exit requested: 'rtsp://user:secret@192.0.2.10/live0'")
+        time.sleep(0.12)  # a failed connect attempt
+        raise OSError("Connection refused: rtsp://user:secret@192.0.2.10/live0")
+
+
+def test_short_drop_reconnects_quietly():
+    rec = Recorder()
+    det = _FlakyDetector(["ok", "fail", "ok"], rec)
+    det.run()
+    assert [k for k, _ in rec.events] == ["connected"]  # no "disconnected" for a 0.1 s drop
+
+
+def test_long_outage_reports_once_without_password():
+    import logging
+
+    class Capture(logging.Handler):
+        def __init__(self):
+            super().__init__(logging.DEBUG)
+            self.lines = []
+
+        def emit(self, record):
+            self.lines.append(record.getMessage())
+
+    logger = logging.getLogger("custom_components.rtsp_motion.detector")
+    handler, old_level = Capture(), logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+    try:
+        rec = Recorder()
+        _FlakyDetector(["ok"] + ["fail"] * 6, rec).run()
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
+    text = "\n".join(handler.lines)
+    assert [k for k, _ in rec.events] == ["connected", "disconnected"]
+    assert "Video interrupted" in text
+    assert "secret" not in text  # not even in debug lines
 
 
 def test_without_confirm_frames_glitch_fires(tmp_path):

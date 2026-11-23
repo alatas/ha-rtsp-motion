@@ -34,6 +34,7 @@ from .const import (
     DEFAULT_PORT,
     DOMAIN,
 )
+from .detector import redact
 from .hub import build_url, parse_areas
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ def probe_stream(url: str) -> tuple[int, int]:
     except av.error.HTTPNotFoundError as err:
         raise CannotConnect("stream_not_found") from err
     except (av.error.FFmpegError, OSError, IndexError) as err:
-        _LOGGER.debug("Probe failed: %s", err)
+        _LOGGER.debug("Probe failed: %s", redact(str(err)))
         raise CannotConnect("cannot_connect") from err
     raise CannotConnect("cannot_connect")
 

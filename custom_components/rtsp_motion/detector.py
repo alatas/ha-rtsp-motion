@@ -12,6 +12,7 @@ one-frame decode glitches.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from collections import deque
@@ -65,6 +66,7 @@ class MotionDetector(threading.Thread):
     OPEN_TIMEOUT = 10.0
     READ_TIMEOUT = 4.0              # no packet for this long -> reconnect
     RETRY_DELAY = 3.0               # camera answers 404 for a few s after a reboot
+    LOST_GRACE = 15.0               # short drops reconnect silently; longer = video lost
     UPDATE_INTERVAL = 1.0           # on_update rate limit
 
     def __init__(self, url: str, settings: DetectorSettings, callbacks: Callbacks) -> None:
@@ -81,6 +83,7 @@ class MotionDetector(threading.Thread):
         self._alarm_changed: np.ndarray | None = None
         self._keep: np.ndarray | None = None
         self._paused = False
+        self._lost_at: float | None = None  # monotonic time a quiet reconnect started
 
     # ---- public API -------------------------------------------------------
 
@@ -120,15 +123,24 @@ class MotionDetector(threading.Thread):
                 self._read_stream()
                 reason = "stream ended"
             except Exception as err:  # noqa: BLE001 - any stream error means reconnect
-                reason = f"{type(err).__name__}: {err}"
+                reason = redact(f"{type(err).__name__}: {err}")
             if self._stop_event.is_set():
                 return
+            now = time.monotonic()
             if self.state.connected:
-                self.state.connected = False
-                self.state.fps = 0.0
-                self._end_motion()
-                _LOGGER.warning("Video interrupted (%s)", reason)
-                self.callbacks.on_disconnected(reason)
+                # Cameras often stall for a few seconds and come back. Reconnect quietly;
+                # only report "video interrupted" if it stays down for LOST_GRACE.
+                if self._lost_at is None:
+                    self._lost_at = now
+                    _LOGGER.debug("Stream dropped (%s); reconnecting", reason)
+                elif now - self._lost_at >= self.LOST_GRACE:
+                    down = now - self._lost_at
+                    self._lost_at = None
+                    self.state.connected = False
+                    self.state.fps = 0.0
+                    self._end_motion()
+                    _LOGGER.warning("Video interrupted: no video for %.0f s (%s)", down, reason)
+                    self.callbacks.on_disconnected(reason)
             else:
                 _LOGGER.debug("Connect failed (%s)", reason)
             self._stop_event.wait(self.RETRY_DELAY)
@@ -140,6 +152,9 @@ class MotionDetector(threading.Thread):
         ) as container:
             stream = container.streams.video[0]
             stream.thread_type = "AUTO"
+            # A new connection restarts the stream timestamps, which the motion hold
+            # timer uses, so a motion from before a quiet reconnect ends here.
+            self._end_motion()
             # Recent frames as (stream time, gray). history[0] is the reference: the
             # newest frame at least `compare_seconds` old. Comparing across that gap
             # (instead of with the previous frame) makes slow or distant movement show
@@ -163,6 +178,9 @@ class MotionDetector(threading.Thread):
                                        interpolation="AREA").to_ndarray()
                 gray = _gray(small)
 
+                if self._lost_at is not None:
+                    _LOGGER.debug("Reconnected after %.0f s", time.monotonic() - self._lost_at)
+                    self._lost_at = None
                 if not self.state.connected:
                     self.state.connected = True
                     _LOGGER.info("Video connected (%dx%d)", frame.width, frame.height)
@@ -248,6 +266,14 @@ class MotionDetector(threading.Thread):
         if self.state.motion:
             self.state.motion = False
             self.callbacks.on_motion_end(self.state.peak_percent)
+
+
+_CREDENTIALS = re.compile(r"(\w+://)[^/@\s'\"]+@")
+
+
+def redact(text: str) -> str:
+    """Hide user:password in any URL (FFmpeg error messages include the full URL)."""
+    return _CREDENTIALS.sub(r"\1***@", text)
 
 
 def _gray(rgb: np.ndarray) -> np.ndarray:

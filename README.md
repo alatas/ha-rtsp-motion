@@ -34,7 +34,7 @@ In the automation editor, pick the device and one of:
 - **Motion detected**, with an optional *Only when the change reaches (%)*.
   It fires once per motion, as soon as the change reaches that value.
 - **Motion cleared**
-- **Video interrupted**
+- **Video interrupted** (no video for 15 seconds)
 - **Video connected**
 
 The change is available in templates as `{{ trigger.percent }}`.
@@ -96,8 +96,11 @@ folder and restart Home Assistant.
 
 - Detection runs on a 640-pixel-wide copy of each frame. Decoding the video is
   most of the CPU cost, so a high-resolution stream needs more CPU.
-- If the stream freezes for 4 seconds, it reconnects by itself and the
-  **Video interrupted** / **Video connected** triggers fire.
+- If the stream freezes for 4 seconds, it reconnects by itself. Many cameras
+  stall briefly now and then, so short drops are handled quietly: only when there
+  is no video for 15 seconds does **Video** turn off and the **Video interrupted**
+  trigger fire (and **Video connected** when it's back).
+- Camera usernames and passwords are hidden (`rtsp://***@...`) in log messages.
 - Tested with Home Assistant 2026.5 and 2026.10. It uses PyAV and numpy, which
   Home Assistant already includes.
 
