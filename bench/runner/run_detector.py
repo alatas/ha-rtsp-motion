@@ -1,6 +1,7 @@
 """Run the real MotionDetector against a bench RTSP stream and record its callbacks."""
 from __future__ import annotations
 
+import statistics
 import threading
 import time
 from dataclasses import dataclass, field
@@ -25,7 +26,14 @@ class Recording:
     # when the first reader asks, but the first frame only arrives after the open
     # (about 3 s: publisher start plus a catch-up burst of frames), so
     # scenario time = event time + connect_offset.
-    connect_offset: float = 0.0
+    # None = the stream never connected.
+    connect_offset: float | None = 0.0
+    # (kind, value) events that arrived before the first connect (should not happen).
+    pre_connect: list[tuple[str, float | None]] = field(default_factory=list)
+
+    def count(self, kind: str) -> int:
+        n = sum(1 for e in self.events if e[1] == kind)
+        return n + sum(1 for k, _v in self.pre_connect if k == kind)
 
     def motions(self, shift: float = 0.0) -> list[tuple[float, float | None]]:
         """(start, end|None) pairs; shift is added to every time."""
@@ -49,13 +57,15 @@ class _Recorder(Callbacks):
         self.t0: float | None = None
         self.started = time.monotonic()
         self.events: list[tuple[float, str, float | None]] = []
+        self.pre: list[tuple[str, float | None]] = []
         self._lock = threading.Lock()
 
     def _add(self, kind: str, value: float | None) -> None:
         now = time.monotonic()
         with self._lock:
             if self.t0 is None:
-                return  # before the first connect: shouldn't happen, drop
+                self.pre.append((kind, value))  # shouldn't happen: keep, counted separately
+                return
             self.events.append((now - self.t0, kind, value))
 
     def on_connected(self) -> None:
@@ -84,19 +94,23 @@ def run_stream(url: str, settings: DetectorSettings, seconds: float) -> Recordin
         det.stop()
         det.join(JOIN_TIMEOUT)
     with rec._lock:
-        offset = (rec.t0 - rec.started) if rec.t0 is not None else 0.0
-        return Recording(list(rec.events), offset)
+        offset = (rec.t0 - rec.started) if rec.t0 is not None else None
+        return Recording(list(rec.events), offset, list(rec.pre))
 
 
 def run_scenario(name: str) -> dict:
     sc = SCENARIOS[name]
     settings = DetectorSettings()
     rec = run_stream(url_for(name), settings, sc.duration + 10)
-    s = score(sc.truth, rec.motions(rec.connect_offset), settings.hold_seconds)
-    lost = sum(1 for e in rec.events if e[1] == "lost")
-    delay = sorted(s.delays)[len(s.delays) // 2] if s.delays else None
-    ok = (s.misses == 0 and s.false_alarms <= sc.expect.max_false_alarms
+    connected = rec.count("connected")
+    motions = rec.motions(rec.connect_offset or 0.0)
+    s = score(sc.truth, motions, settings.hold_seconds)
+    lost = rec.count("lost")
+    delay = statistics.median(s.delays) if s.delays else None
+    ok = (connected >= 1 and s.misses == 0 and s.false_alarms <= sc.expect.max_false_alarms
           and s.stuck == 0 and lost == sc.expect.video_lost)
     return {"scenario": name, "truth": len(sc.truth), "hits": s.hits, "misses": s.misses,
             "false_alarms": s.false_alarms, "stuck": s.stuck, "lost": lost,
-            "median_delay": delay, "passed": ok}
+            "median_delay": delay, "passed": ok, "connected": connected,
+            "connect_offset": rec.connect_offset, "delays": s.delays, "motions": motions,
+            "events": rec.events, "pre_connect": rec.pre_connect}
