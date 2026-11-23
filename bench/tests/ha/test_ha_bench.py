@@ -48,6 +48,9 @@ async def test_flow_wrong_password(hass):
 
 @pytest.mark.timeout(60)
 async def test_flow_missing_path(hass):
+    # mediamtx answers 400 for unconfigured paths and the integration maps only 404 to
+    # stream_not_found (an integration finding), so mediamtx.yml configures `nothing/.+`
+    # as a never-published path, which answers 404 like a real camera.
     result = await _flow(hass, path="nothing/here")
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "stream_not_found"}
@@ -58,6 +61,7 @@ class Recorder:
 
     def __init__(self, hass):
         self.origin = None
+        self.t0 = time.monotonic()  # setup start
         self.events = []  # (seconds since origin, type, percent)
         self.connected = asyncio.Event()
         hass.bus.async_listen(EVENT, self._on_event)
@@ -117,41 +121,51 @@ async def test_walker_fires_device_trigger(hass):
     finally:
         await _stop(hass, entry)
 
-    rel = [t - rec.origin for t in fired]
-    print("device trigger fire times after origin:", rel, "events:", rec.events)
+    rel = [t - rec.t0 for t in fired]
+    print("device trigger fire times after setup start:", rel,
+          "origin at", rec.origin - rec.t0, "events:", rec.events)
     assert len(fired) == 1, rec.events
-    # The walker appears at scenario t=20. The origin (first video_connected) lags the
-    # scenario clock by ~2 s (on-demand publisher start + first keyframe), so a ~1 s
-    # pipeline lag lands at ~18 s after origin: window is [16.5, 22.5], measured ~17.9.
-    assert 16.5 <= rel[0] <= 22.5, rel
+    assert 19.0 <= rel[0] <= 22.5, rel
 
 
 @pytest.mark.timeout(SCENARIO_SECONDS + 30)
-@pytest.mark.xfail(strict=True, reason=(
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
     "integration finding: av.open blocks until video resumes, so the LOST_GRACE check "
     "never runs during a frozen-but-open session (no video_lost event)"))
 async def test_freeze_long_events(hass):
     entry, rec = await _start(hass, "freeze_long")
     try:
+        # Setup problems must fail loudly (not AssertionError), not count as the finding.
         await asyncio.wait_for(rec.connected.wait(), 20)
         await asyncio.sleep(SCENARIO_SECONDS - 10)
     finally:
-        await _stop(hass, entry)
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
     print("freeze_long events:", rec.events)
     types = rec.types()
+    assert "video_connected" in types, rec.events
+    # Expected failure below: the known finding.
     assert types.count("video_lost") == 1, rec.events
     assert "video_connected" in types[types.index("video_lost"):], rec.events
+
+
+def _thread_alive():
+    return any(t.name == "rtsp_motion" and t.is_alive() for t in threading.enumerate())
 
 
 @pytest.mark.timeout(60)
 async def test_unload_stops_thread(hass):
     entry, rec = await _start(hass, "night_walker")
-    await asyncio.wait_for(rec.connected.wait(), 20)
-    assert any(t.name == "rtsp_motion" and t.is_alive() for t in threading.enumerate())
-    await hass.config_entries.async_unload(entry.entry_id)
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        if not any(t.name == "rtsp_motion" and t.is_alive() for t in threading.enumerate()):
-            break
-        await asyncio.sleep(0.1)
-    assert not any(t.name == "rtsp_motion" and t.is_alive() for t in threading.enumerate())
+    unloaded = False
+    try:
+        await asyncio.wait_for(rec.connected.wait(), 20)
+        assert _thread_alive()
+        unloaded = await hass.config_entries.async_unload(entry.entry_id)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and _thread_alive():
+            await asyncio.sleep(0.1)
+        assert unloaded
+        assert not _thread_alive()
+    finally:
+        if not unloaded:
+            assert await hass.config_entries.async_unload(entry.entry_id)
