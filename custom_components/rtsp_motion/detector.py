@@ -245,7 +245,9 @@ class MotionDetector(threading.Thread):
                             pct = np.count_nonzero(confirm) * 100.0 / watched
                             if pct >= s.min_percent:
                                 fired_changed = confirm
-                                self._confirmed(pct, t)
+                                # The hold counts from when the change was seen, not
+                                # from the confirmation (seconds later at low fps).
+                                self._confirmed(pct, pending_since)
                             else:
                                 # A glitch: never let its frames become a reference.
                                 while history and history[-1][0] >= pending_since:

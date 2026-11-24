@@ -244,6 +244,66 @@ def test_forward_timestamp_jump_keeps_one_motion(tmp_path):
     assert [k for k, _ in events].count("start") == 1
 
 
+def test_joining_between_keyframes_is_quiet(tmp_path):
+    """A live stream is joined at a random point: until the next keyframe the decoder
+    produces half-decoded pictures. They must not count as motion."""
+    full = tmp_path / "full.ts"
+    out = av.open(str(full), "w")
+    stream = out.add_stream("libx264", rate=15)
+    stream.width, stream.height, stream.pix_fmt = 1280, 720, "yuv420p"
+    stream.options = {"g": "60", "keyint_min": "60", "sc_threshold": "0", "bf": "0"}
+    yy, xx = np.mgrid[0:720, 0:1280]
+    for i in range(150):
+        img = np.zeros((720, 1280, 3), np.uint8)
+        img[..., 0] = ((xx // 16 + yy // 16) % 2) * 200  # textured, still
+        img[..., 1] = (xx * 255 // 1280).astype(np.uint8)
+        for packet in stream.encode(av.VideoFrame.from_ndarray(img, format="rgb24")):
+            out.mux(packet)
+    for packet in stream.encode():
+        out.mux(packet)
+    out.close()
+    # Cut the start: begin 20 frames into the first GOP (next keyframe at frame 60).
+    cut = tmp_path / "cut.ts"
+    src, dst = av.open(str(full)), av.open(str(cut), "w")
+    s_in = src.streams.video[0]
+    s_out = dst.add_stream_from_template(s_in)
+    for n, packet in enumerate(src.demux(s_in)):
+        if packet.dts is None or n < 20:
+            continue
+        packet.stream = s_out
+        dst.mux(packet)
+    src.close()
+    dst.close()
+    events, _ = run(cut, DetectorSettings(hold_seconds=0))
+    assert not any(kind == "start" for kind, _ in events), events
+
+
+def test_hold_counts_from_when_the_change_was_seen(tmp_path):
+    """At low frame rates confirm_frames takes seconds; the hold timer must start at
+    the change, not at the confirmation."""
+    frames = []
+    for i in range(24):  # 4 fps: change at frame 8 = 2.0 s, confirmed 3 frames later
+        img = np.full((720, 1280, 3), 40, np.uint8)
+        if i >= 8:
+            img[200:500, 300:700] = 160
+        frames.append(img)
+    path = tmp_path / "slow.mp4"
+    out = av.open(str(path), "w")
+    stream = out.add_stream("mpeg4", rate=4)
+    stream.width, stream.height, stream.pix_fmt = 1280, 720, "yuv420p"
+    for img in frames:
+        for packet in stream.encode(av.VideoFrame.from_ndarray(img, format="rgb24")):
+            out.mux(packet)
+    for packet in stream.encode():
+        out.mux(packet)
+    out.close()
+    rec = Recorder()
+    det = MotionDetector(str(path), DetectorSettings(hold_seconds=60), rec)
+    det._read_stream()
+    assert det.state.motion
+    assert abs(det.state.last_motion - 2.0) < 0.01, det.state.last_motion
+
+
 def test_glitch_in_the_first_frame_is_ignored(tmp_path):
     """Cameras often send a broken first picture after connecting. It must not become
     the reference that every following frame is compared with."""
