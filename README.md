@@ -67,7 +67,9 @@ actions:
 | Motion hold time | 5 s | Motion stays on this long after the last change. |
 | Ignored areas | `65,0,35,12` | `x,y,width,height` in percent, separated by `;`. The default is the top-right corner, where many cameras show a clock. Empty = whole picture. |
 
-To change the address or password, use **⋮ → Reconfigure** on the integration.
+To change the address (for example after the camera got a new IP), username or
+password, use **⋮ → Reconfigure** on the integration. The device stays the same, so
+automations that use its triggers keep working.
 
 ## Installation
 

@@ -35,7 +35,6 @@
     },
     "abort": {
       "already_configured": "This camera stream is already added.",
-      "different_camera": "That is a different camera. Add it as a new device instead.",
       "reconfigure_successful": "The connection was updated."
     }
   },

@@ -99,6 +99,10 @@ def _clean(user_input: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _unique_id(data: dict[str, Any]) -> str:
+    return f"{data[CONF_HOST]}:{data[CONF_PORT]}/{data[CONF_PATH]}"
+
+
 class RtspMotionConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -113,7 +117,7 @@ class RtspMotionConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             data = _clean(user_input)
-            await self.async_set_unique_id(f"{data[CONF_HOST]}:{data[CONF_PORT]}/{data[CONF_PATH]}")
+            await self.async_set_unique_id(_unique_id(data))
             self._abort_if_unique_id_configured()
             if (error := await self._async_validate(data)) is None:
                 return self.async_create_entry(title=user_input[CONF_NAME], data=data)
@@ -133,10 +137,15 @@ class RtspMotionConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             data = _clean(user_input)
-            await self.async_set_unique_id(f"{data[CONF_HOST]}:{data[CONF_PORT]}/{data[CONF_PATH]}")
-            self._abort_if_unique_id_mismatch(reason="different_camera")
+            # The address may change (a camera that got a new IP is the usual reason to
+            # reconfigure). The device is keyed on the entry, so it and its automations
+            # stay; only another camera already using the new address is refused.
+            unique_id = _unique_id(data)
+            other = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, unique_id)
+            if other is not None and other.entry_id != entry.entry_id:
+                return self.async_abort(reason="already_configured")
             if (error := await self._async_validate(data)) is None:
-                return self.async_update_reload_and_abort(entry, data=data)
+                return self.async_update_reload_and_abort(entry, unique_id=unique_id, data=data)
             errors["base"] = error
         return self.async_show_form(
             step_id="reconfigure",
