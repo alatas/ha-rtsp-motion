@@ -15,7 +15,7 @@ def skewed(rows: list[dict]) -> set[int]:
     return {i for i, r in enumerate(rows) if r.get("connect_offset") is not None
             and abs(r["connect_offset"] - med) > SKEW_LIMIT}
 
-COLUMNS = ["scenario", "truth", "hits", "misses", "false alarms", "stuck", "lost",
+COLUMNS = ["scenario", "truth", "hits", "covered", "misses", "false alarms", "stuck", "lost",
            "median delay", "fps", "connect offset", "result"]
 
 
@@ -28,7 +28,8 @@ def write_report(rows: list[dict], md_path: str, json_path: str,
     for i, r in enumerate(rows):
         d = r.get("median_delay")
         lines.append("| " + " | ".join([
-            str(r["scenario"]), str(r.get("truth", "-")), str(r.get("hits", "-")), str(r.get("misses", "-")),
+            str(r["scenario"]), str(r.get("truth", "-")), str(r.get("hits", "-")),
+            str(r.get("covered", "-")), str(r.get("misses", "-")),
             str(r.get("false_alarms", "-")), str(r.get("stuck", "-")), str(r.get("lost", "-")),
             "-" if d is None else f"{d:.2f}s",
             "-" if r.get("fps") is None else f"{r['fps']:.1f}",

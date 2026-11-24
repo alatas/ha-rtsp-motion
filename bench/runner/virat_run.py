@@ -53,11 +53,13 @@ def totals(rows: list[dict]) -> dict:
     ok = [r for r in rows if r.get("passed") and not r.get("error")]
     truth = sum(r.get("truth", 0) for r in ok)
     hits = sum(r.get("hits", 0) for r in ok)
+    covered = sum(r.get("covered", 0) for r in ok)
     delays = [d for r in ok for d in r.get("delays", [])]
     secs = sum(r.get("run_seconds", 0.0) for r in ok)
     fa = sum(r.get("false_alarms", 0) for r in ok)
     return {"clips": len(rows), "errors": len(rows) - len(ok), "truth": truth, "hits": hits,
-            "hit_rate": hits / truth if truth else None,
+            "hit_rate": hits / truth if truth else None, "covered": covered,
+            "caught_rate": (hits + covered) / truth if truth else None,
             "median_delay": statistics.median(delays) if delays else None,
             "false_alarms": fa, "run_seconds": secs,
             "false_alarms_per_hour": fa / (secs / 3600) if secs else None,
@@ -75,7 +77,9 @@ def write_virat_report(rows: list[dict], md_path: str, json_path: str) -> None:
     md += ("\n## Totals\n\n"
            f"- clips run: {t['clips']} ({t['errors']} errors, not counted below)\n"
            f"- truth intervals: {t['truth']}\n- hits: {t['hits']}\n"
-           f"- hit rate: {_fmt(t['hit_rate'], '.1%')}\n"
+           f"- hit rate: {_fmt(t['hit_rate'], '.1%')} (a motion started for the movement)\n"
+           f"- covered: {t['covered']} (movement while a motion was already on)\n"
+           f"- caught rate: {_fmt(t['caught_rate'], '.1%')} (hits + covered)\n"
            f"- median delay: {_fmt(t['median_delay'], '.2f')} s\n"
            f"- false alarms: {t['false_alarms']}\n"
            f"- false alarms per hour: {_fmt(t['false_alarms_per_hour'], '.2f')} "

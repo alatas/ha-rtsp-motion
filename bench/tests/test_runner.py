@@ -31,14 +31,9 @@ def test_quiet_night_has_no_alarm():
     assert not [e for e in rec.events if e[1] == "start"]
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
-    "integration finding: av.open blocks until video resumes, so the LOST_GRACE check "
-    "never runs during a frozen-but-open session (no `lost` event)"))
 def test_freeze_long_reports_lost_once():
     _sc, rec = _run("freeze_long")
-    # Setup problems must fail loudly (not as AssertionError), not count as the finding.
-    if rec.count("connected") < 1:
-        raise RuntimeError("never connected: not the known finding")
+    assert rec.count("connected") >= 1
     kinds = [e[1] for e in rec.events]
     assert rec.count("lost") == 1
     assert "connected" in kinds[kinds.index("lost"):]

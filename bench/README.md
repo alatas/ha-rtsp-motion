@@ -78,17 +78,24 @@ Notes on what the bench can and cannot do:
 
 ## Known findings
 
-The synthetic run currently fails 5 scenarios. They are findings about the integration,
-to be fixed separately; the bench is reporting them correctly. Until then the CI job and
-its stages are `continue-on-error`.
+The first full run found these, all fixed in the integration since:
 
-- `lights_on`: missed. The whole-picture brightening is not detected.
-- `glitch_burst`: 1 false alarm from the one-frame white glitches.
-- `freeze_long`: `video_lost` never fires. `av.open` blocks while the session is open
-  but silent, so `LOST_GRACE` never runs. (The `freeze_long` tests are strict xfails for
-  the same reason.)
-- `pts_back`: motion stays stuck after a restart with an earlier clock.
-- `low_fps`: motion stuck, plus a 6 s delay at 2 fps.
+- `freeze_long`: `video_lost` never fired. The 15 s grace was counted from the first
+  failed reconnect, and a frozen camera that keeps the connection open makes every
+  attempt slow, so the check never tripped. It now counts from the last frame.
+- `pts_back`: the motion stayed on until a reconnect, because the hold timer only runs
+  on frames. A broken stream now ends the motion.
+- `pts_forward`: a forward clock jump ended and restarted the motion. Camera clock
+  jumps now count as one frame step.
+- `glitch_burst`: a broken first picture became the reference. Detection now starts
+  `compare_seconds + 0.5` s after connecting.
+- `low_fps`: frame-threaded decoding held back one frame per thread (4 s at 2 fps).
+  Decoding now uses slice threading only.
+- `lights_on` was a bench problem: a 1 s change can't be scored as a hit before it
+  ends, so the hit window now stays open `HIT_LATE` (3 s) after the start.
+
+Still open:
+
 - mediamtx answers `400` (not `404`) for paths it has no configuration for, and the
   integration maps only `404` to `stream_not_found`. The bench works around it with the
   `nothing/...` path.
@@ -97,12 +104,14 @@ its stages are `continue-on-error`.
 
 Times are seconds from the start of the run (the scoring origin).
 
-- **Hit**: a motion starts in `[truth.start - 1.0, truth.end]`.
+- **Hit**: a motion starts in `[truth.start - 1.0, max(truth.end, truth.start + 3.0)]`.
+- **Covered**: no motion started for this truth interval, but a motion that already hit
+  an earlier one was still on when it began. Not a miss: the motion was showing.
 - **Delay**: motion start minus `truth.start`.
 - **False alarm**: a motion with no truth interval within 2.0 s of it.
 - **Stuck**: a motion that ends more than `hold + 2.0` s after the last truth end it
   overlaps, or never ends.
-- **Miss**: a truth interval with no hit.
+- **Miss**: a truth interval that is neither hit nor covered.
 
 A synthetic row passes when: connected at least once, no misses, false alarms not
 above the scenario's expected count (0), no stuck motion, and the number of

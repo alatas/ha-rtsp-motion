@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 
 HIT_LEAD = 1.0        # a motion may start this long before the truth start and still hit
+HIT_LATE = 3.0        # ...and up to this long after it, even if the change was shorter:
+                      # detection needs compare + confirm + transport (~1.5 s)
 NEAR_MARGIN = 2.0     # +/- window for "near" (false-alarm and stuck overlap test)
 STUCK_MARGIN = 2.0    # extra slack beyond hold before a motion counts as stuck
 
@@ -13,6 +15,7 @@ class ClipScore:
     false_alarms: int
     stuck: int
     delays: list[float]
+    covered: int = 0  # truths with no start of their own, inside a motion that already hit
 
 
 def _near(truth: tuple[float, float], start: float, end: float | None) -> bool:
@@ -30,18 +33,23 @@ def score(truth: list[tuple[float, float]], motions: list[tuple[float, float | N
     motions = sorted(motions, key=lambda m: m[0])
     claimed = [False] * len(motions)
 
-    hits = misses = 0
+    hits = misses = covered = 0
     delays: list[float] = []
     for t_start, t_end in truths:
         match = None
         for i, (m_start, _m_end) in enumerate(motions):
             if claimed[i]:
                 continue
-            if t_start - HIT_LEAD <= m_start <= t_end:
+            if t_start - HIT_LEAD <= m_start <= max(t_end, t_start + HIT_LATE):
                 match = i
                 break  # motions are sorted, so this is the earliest start in the window
         if match is None:
-            misses += 1
+            ongoing = any(claimed[i] and m_start < t_start and (m_end is None or m_end >= t_start)
+                          for i, (m_start, m_end) in enumerate(motions))
+            if ongoing:
+                covered += 1
+            else:
+                misses += 1
         else:
             claimed[match] = True
             hits += 1
@@ -64,4 +72,4 @@ def score(truth: list[tuple[float, float]], motions: list[tuple[float, float | N
             stuck += 1
 
     return ClipScore(hits=hits, misses=misses, false_alarms=false_alarms,
-                     stuck=stuck, delays=delays)
+                     stuck=stuck, delays=delays, covered=covered)

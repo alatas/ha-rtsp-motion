@@ -126,7 +126,8 @@ def score_recording(name: str, truth: list, rec: Recording, settings: DetectorSe
     s = score(truth, motions, settings.hold_seconds)
     fps = statistics.median(rec.fps_samples) if rec.fps_samples else None
     delay = statistics.median(s.delays) if s.delays else None
-    row = {"scenario": name, "truth": len(truth), "hits": s.hits, "misses": s.misses,
+    row = {"scenario": name, "truth": len(truth), "hits": s.hits, "covered": s.covered,
+           "misses": s.misses,
             "false_alarms": s.false_alarms, "stuck": s.stuck, "lost": rec.count("lost"),
             "median_delay": delay, "fps": fps, "connected": connected,
             "connect_offset": rec.connect_offset, "delays": s.delays, "motions": motions,

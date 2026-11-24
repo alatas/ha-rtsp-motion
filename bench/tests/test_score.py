@@ -57,6 +57,28 @@ def test_single_motion_counts_as_hit_for_one_truth_only():
     assert s.false_alarms == 0
 
 
+def test_short_change_can_be_caught_after_it_ends():
+    # Detection takes compare + confirm + transport (~1.5 s), so a 1 s change is
+    # only seen after it's over. The hit window stays open HIT_LATE s after the start.
+    s = score([(20, 21)], [(21.4, 27)], 5)
+    assert (s.hits, s.misses) == (1, 0)
+    s = score([(20, 21)], [(23.5, 27)], 5)
+    assert (s.hits, s.misses) == (0, 1)
+
+
+def test_movement_during_an_ongoing_motion_is_covered():
+    # The second movement starts while the motion fired by the first is still on:
+    # there's no new start to match, but the motion was showing. Not a miss.
+    s = score([(10, 15), (17, 20)], [(10.5, 26)], 5)
+    assert (s.hits, s.covered, s.misses, s.stuck) == (1, 1, 0, 0)
+
+
+def test_early_motion_does_not_cover_later_truth():
+    # Only a motion that already hit real movement counts as covering the next one.
+    s = score([(20, 40)], [(15.0, 45)], 5)
+    assert (s.hits, s.covered, s.misses) == (0, 0, 1)
+
+
 def test_truth_with_no_motion_is_miss():
     s = score([(20, 40)], [], 5)
     assert s.misses == 1

@@ -131,25 +131,17 @@ async def test_walker_fires_device_trigger(hass):
 
 
 @pytest.mark.timeout(SCENARIO_SECONDS + 30)
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
-    "integration finding: av.open blocks until video resumes, so the LOST_GRACE check "
-    "never runs during a frozen-but-open session (no video_lost event)"))
 async def test_freeze_long_events(hass):
     entry, rec = await _start(hass, "freeze_long")
     try:
-        # Setup problems must fail loudly (not AssertionError), not count as the finding.
         await asyncio.wait_for(rec.connected.wait(), 20)
         await asyncio.sleep(SCENARIO_SECONDS - 10)
     finally:
-        # No assert here: it would be swallowed as the xfail's AssertionError.
         unloaded = await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
-    if not unloaded:
-        raise RuntimeError("config entry did not unload")  # not the known finding
-    print("freeze_long events:", rec.events)
+    assert unloaded
     types = rec.types()
     assert "video_connected" in types, rec.events
-    # Expected failure below: the known finding.
     assert types.count("video_lost") == 1, rec.events
     assert "video_connected" in types[types.index("video_lost"):], rec.events
 
