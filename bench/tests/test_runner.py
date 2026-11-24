@@ -223,7 +223,7 @@ def test_detector_that_does_not_stop_is_an_error_row(monkeypatch):
         def join(self, timeout=None): pass
         def is_alive(self): return True
 
-    monkeypatch.setattr(rd, "MotionDetector", Stuck)
+    monkeypatch.setattr(rd, "_SnapDetector", Stuck)
     rec = rd.run_stream("rtsp://x/y", DetectorSettings(), 0.01)
     assert rec.error == "detector thread did not stop"
     row = rd.score_recording("x", [], rec, DetectorSettings(), 0.01)
