@@ -29,6 +29,37 @@ ANALYSIS_WIDTH = 640
 DEFAULT_MASKS: list[tuple[float, float, float, float]] = [(0.65, 0.0, 0.35, 0.12)]
 
 
+WARMUP_SECONDS = 0.5  # after connecting, on top of compare_seconds
+
+
+class StreamClock:
+    """Seconds of video seen, taken from the frames' own timestamps.
+
+    A camera clock that jumps (backwards, or forwards by more than MAX_STEP) counts as
+    one normal frame step instead, so the hold timer and the compare gap never see the
+    jump. A real stall of a few seconds still counts as time.
+    """
+
+    MAX_STEP = 10.0
+
+    def __init__(self) -> None:
+        self._raw: float | None = None
+        self._now = 0.0
+        self._step = 1 / 15
+
+    def advance(self, raw: float) -> float:
+        if self._raw is not None:
+            dt = raw - self._raw
+            if 0 < dt <= self.MAX_STEP:
+                if dt <= 1.0:
+                    self._step = dt
+            else:
+                dt = self._step
+            self._now += dt
+        self._raw = raw
+        return self._now
+
+
 @dataclass
 class DetectorSettings:
     min_percent: float = 0.5        # % of the watched area that must change
@@ -83,7 +114,8 @@ class MotionDetector(threading.Thread):
         self._alarm_changed: np.ndarray | None = None
         self._keep: np.ndarray | None = None
         self._paused = False
-        self._lost_at: float | None = None  # monotonic time a quiet reconnect started
+        self._last_frame_at: float | None = None  # monotonic time of the newest frame
+        self._dropped = False  # the stream broke and hasn't delivered a frame since
 
     # ---- public API -------------------------------------------------------
 
@@ -126,19 +158,20 @@ class MotionDetector(threading.Thread):
                 reason = redact(f"{type(err).__name__}: {err}")
             if self._stop_event.is_set():
                 return
-            now = time.monotonic()
             if self.state.connected:
+                # Without frames the hold timer can't run, so the motion ends here.
+                self._end_motion()
                 # Cameras often stall for a few seconds and come back. Reconnect quietly;
-                # only report "video interrupted" if it stays down for LOST_GRACE.
-                if self._lost_at is None:
-                    self._lost_at = now
+                # only report "video interrupted" once there has been no frame for
+                # LOST_GRACE. Counted from the last frame, because a frozen camera that
+                # keeps the connection open makes every reconnect attempt slow.
+                if not self._dropped:
+                    self._dropped = True
                     _LOGGER.debug("Stream dropped (%s); reconnecting", reason)
-                elif now - self._lost_at >= self.LOST_GRACE:
-                    down = now - self._lost_at
-                    self._lost_at = None
+                down = time.monotonic() - (self._last_frame_at or time.monotonic())
+                if down >= self.LOST_GRACE:
                     self.state.connected = False
                     self.state.fps = 0.0
-                    self._end_motion()
                     _LOGGER.warning("Video interrupted: no video for %.0f s (%s)", down, reason)
                     self.callbacks.on_disconnected(reason)
             else:
@@ -151,10 +184,17 @@ class MotionDetector(threading.Thread):
             self.url, options=options, timeout=(self.OPEN_TIMEOUT, self.READ_TIMEOUT)
         ) as container:
             stream = container.streams.video[0]
-            stream.thread_type = "AUTO"
+            # Slice threading only: frame threading holds back one frame per thread
+            # before the first picture comes out, which at low frame rates delays
+            # detection by seconds.
+            stream.thread_type = "SLICE"
             # A new connection restarts the stream timestamps, which the motion hold
             # timer uses, so a motion from before a quiet reconnect ends here.
             self._end_motion()
+            clock = StreamClock()
+            # The first pictures after connecting are often broken or half-decoded. Let
+            # the reference move past them before comparing.
+            warmup = self.settings.compare_seconds + WARMUP_SECONDS
             # Recent frames as (stream time, gray). history[0] is the reference: the
             # newest frame at least `compare_seconds` old. Comparing across that gap
             # (instead of with the previous frame) makes slow or distant movement show
@@ -169,8 +209,9 @@ class MotionDetector(threading.Thread):
                 if self._stop_event.is_set():
                     return
                 now = time.time()
-                # Stream timestamps keep the gap right even if decoding lags or bursts.
-                t = frame.time if frame.time is not None else now
+                # Stream timestamps keep the gap right even if decoding lags or bursts;
+                # the clock smooths over camera clock jumps.
+                t = clock.advance(frame.time if frame.time is not None else now)
                 frames_since_update += 1
 
                 height = round(frame.height * ANALYSIS_WIDTH / frame.width / 2) * 2
@@ -178,9 +219,7 @@ class MotionDetector(threading.Thread):
                                        interpolation="AREA").to_ndarray()
                 gray = _gray(small)
 
-                if self._lost_at is not None:
-                    _LOGGER.debug("Reconnected after %.0f s", time.monotonic() - self._lost_at)
-                    self._lost_at = None
+                self._frame_received()
                 if not self.state.connected:
                     self.state.connected = True
                     _LOGGER.info("Video connected (%dx%d)", frame.width, frame.height)
@@ -189,16 +228,13 @@ class MotionDetector(threading.Thread):
                     self._keep = _build_keep(gray.shape, self.settings.masks)
                     history.clear()
                     pending_ref = None
-                if history and t < history[-1][0]:
-                    history.clear()  # timestamps jumped back (stream restarted)
-                    pending_ref = None
                 keep = self._keep
                 watched = max(1, int(np.count_nonzero(keep)))
                 s = self.settings
 
                 changed = None
                 fired_changed = None
-                if history:
+                if history and t >= warmup:
                     ref = history[0][1]
                     changed = self._changed(ref, gray, keep)
                     self.state.percent = np.count_nonzero(changed) * 100.0 / watched
@@ -243,6 +279,14 @@ class MotionDetector(threading.Thread):
                     frames_since_update = 0
                     last_update = now
                     self.callbacks.on_update(self.state)
+
+    def _frame_received(self) -> None:
+        now = time.monotonic()
+        if self._dropped:
+            _LOGGER.debug("Reconnected after %.0f s without video",
+                          now - (self._last_frame_at or now))
+            self._dropped = False
+        self._last_frame_at = now
 
     def _changed(self, a: np.ndarray, b: np.ndarray, keep: np.ndarray) -> np.ndarray:
         diff = np.abs(a.astype(np.int16) - b.astype(np.int16))

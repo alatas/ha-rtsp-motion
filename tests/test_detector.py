@@ -146,13 +146,17 @@ class _FlakyDetector(MotionDetector):
             self.stop()
             raise OSError("done")
         kind = self.sessions.pop(0)
-        if kind == "ok":  # got video, then the stream broke
-            self._lost_at = None
+        if kind in ("ok", "stall", "motion"):  # got video, then the stream broke
+            self._frame_received()
             if not self.state.connected:
                 self.state.connected = True
                 self.callbacks.on_connected()
+            if kind == "motion":
+                self._confirmed(5.0, 0.0)
+            if kind == "stall":
+                time.sleep(0.25)  # no packets until the read timeout
             raise OSError("Immediate exit requested: 'rtsp://user:secret@192.0.2.10/live0'")
-        time.sleep(0.12)  # a failed connect attempt
+        time.sleep(0.2 if kind == "slowfail" else 0.12)  # a failed connect attempt
         raise OSError("Connection refused: rtsp://user:secret@192.0.2.10/live0")
 
 
@@ -188,6 +192,66 @@ def test_long_outage_reports_once_without_password():
     assert [k for k, _ in rec.events] == ["connected", "disconnected"]
     assert "Video interrupted" in text
     assert "secret" not in text  # not even in debug lines
+
+
+def test_lost_is_measured_from_the_last_frame():
+    """A frozen camera that keeps the connection open: each reconnect attempt is slow
+    (it connects, then waits for a frame), so the grace must count from the last frame,
+    not from the first failed attempt."""
+    rec = Recorder()
+    _FlakyDetector(["stall", "slowfail", "ok"], rec).run()
+    assert [k for k, _ in rec.events] == ["connected", "disconnected", "connected"]
+
+
+def test_motion_ends_when_the_stream_breaks():
+    """Without frames the hold timer can't run, so a broken stream ends the motion."""
+    rec = Recorder()
+    _FlakyDetector(["motion"], rec).run()
+    assert [k for k, _ in rec.events] == ["connected", "start", "end"]
+
+
+def test_stream_clock_ignores_timestamp_jumps():
+    from custom_components.rtsp_motion.detector import StreamClock
+
+    clock = StreamClock()
+    raw = [100.0, 100.1, 100.2, 3700.2, 3700.3, 50.0, 50.1]
+    got = [round(clock.advance(t), 3) for t in raw]
+    assert got == [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+    # A real stall (a few seconds without frames) still counts as time.
+    clock = StreamClock()
+    assert [clock.advance(t) for t in (0.0, 1.0, 4.0)] == [0.0, 1.0, 4.0]
+
+
+def test_forward_timestamp_jump_keeps_one_motion(tmp_path):
+    """A camera clock jump in the middle of a movement must not end and restart it."""
+    path = tmp_path / "jump.mp4"
+    out = av.open(str(path), "w")
+    stream = out.add_stream("mpeg4", rate=15)
+    stream.width, stream.height, stream.pix_fmt = 1280, 720, "yuv420p"
+    for i in range(150):
+        img = np.full((720, 1280, 3), 40, np.uint8)
+        if 30 <= i < 120:
+            x = 100 + 8 * (i - 30)
+            img[300:500, x:x + 150] = 110
+        frame = av.VideoFrame.from_ndarray(img, format="rgb24")
+        frame.pts = i if i < 75 else i + 15 * 3600  # +1 h jump mid-movement
+        for packet in stream.encode(frame):
+            out.mux(packet)
+    for packet in stream.encode():
+        out.mux(packet)
+    out.close()
+    events, _ = run(path, DetectorSettings(hold_seconds=2))
+    assert [k for k, _ in events].count("start") == 1
+
+
+def test_glitch_in_the_first_frame_is_ignored(tmp_path):
+    """Cameras often send a broken first picture after connecting. It must not become
+    the reference that every following frame is compared with."""
+    frames = [np.full((720, 1280, 3), 200 if i == 0 else 60, np.uint8) for i in range(45)]
+    path = tmp_path / "first.mp4"
+    make_video(path, frames)
+    events, _ = run(path, DetectorSettings(hold_seconds=0))
+    assert not any(kind == "start" for kind, _ in events)
 
 
 def test_without_confirm_frames_glitch_fires(tmp_path):
