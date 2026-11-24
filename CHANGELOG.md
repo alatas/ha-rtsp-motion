@@ -3,7 +3,7 @@
 All notable changes to RTSP Motion. Versions follow the `version` in
 `custom_components/rtsp_motion/manifest.json`.
 
-## 0.1.5 (not released yet)
+## 0.1.5 (2026-11-25)
 
 ### New
 
