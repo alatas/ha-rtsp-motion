@@ -18,7 +18,7 @@ Each camera becomes a device with:
 |---|---|
 | Camera | Live picture with the changed pixels in red |
 | Motion | On while a change is detected |
-| Motion change | Peak change (%) of the current or last motion |
+| Motion change | Peak change (%) of the current motion, 0 when there is none |
 | Last motion | Snapshot of the last motion, changed pixels in red |
 | Motion detection | Switch to pause detection (video keeps running) |
 | Video | Diagnostic: is the camera sending video |

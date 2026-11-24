@@ -96,7 +96,7 @@ class RtspMotionHub(Callbacks):
         self.signal = f"{DOMAIN}_{entry.entry_id}"
         self.connected = False
         self.motion = False
-        self.motion_percent: float | None = None   # peak change of the current/last motion
+        self.motion_percent: float | None = None   # peak change of the current motion, else 0
         self.last_motion: datetime | None = None
         self.fps = 0.0
         self._last_fps_push = 0.0
@@ -154,6 +154,8 @@ class RtspMotionHub(Callbacks):
             return
         if kind == VIDEO_CONNECTED:
             self.connected = True
+            if not self.motion:
+                self.motion_percent = 0.0
         elif kind == VIDEO_LOST:
             self.connected = False
             self.fps = 0.0
@@ -165,6 +167,9 @@ class RtspMotionHub(Callbacks):
             self.motion_percent = round(percent, 2)
         elif kind == MOTION_CLEARED:
             self.motion = False
+            # Back to 0, so a timeline shows one spike per motion instead of holding the
+            # last peak. The peak is still in the motion_cleared event.
+            self.motion_percent = 0.0
         async_dispatcher_send(self.hass, self.signal)
         data = {"device_id": self.device_id, "type": kind}
         if percent is not None:

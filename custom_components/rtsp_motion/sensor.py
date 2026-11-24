@@ -1,7 +1,8 @@
 """Motion change (%) and frame rate sensors.
 
-The change sensor holds the peak change of the current or last motion. It only
-changes when motion is detected, so it doesn't flood the recorder.
+The change sensor shows the peak change of the current motion and 0 when there is
+no motion. It only changes when motion starts, grows or ends, so it doesn't flood
+the recorder.
 """
 from __future__ import annotations
 

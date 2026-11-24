@@ -21,6 +21,7 @@ async def test_entities_follow_detector(hass, setup_entry, fake_detector):
     await hass.async_block_till_done()
     assert hass.states.get("binary_sensor.baby_room_video").state == STATE_ON
     assert hass.states.get("binary_sensor.baby_room_motion").state == STATE_OFF
+    assert hass.states.get("sensor.baby_room_motion_change").state == "0.0"
     assert hass.states.get("camera.baby_room").state != STATE_UNAVAILABLE
 
     assert hass.states.get("image.baby_room_last_motion").state == STATE_UNAVAILABLE
@@ -35,7 +36,9 @@ async def test_entities_follow_detector(hass, setup_entry, fake_detector):
     hub.on_motion_end(7.5)
     await hass.async_block_till_done()
     assert hass.states.get("binary_sensor.baby_room_motion").state == STATE_OFF
-    assert hass.states.get("sensor.baby_room_motion_change").state == "7.5"
+    # Back to 0 when the motion clears, so a timeline shows one spike per motion. The
+    # peak stays in the motion_cleared event.
+    assert hass.states.get("sensor.baby_room_motion_change").state == "0.0"
 
     hub.on_disconnected("test")
     await hass.async_block_till_done()
@@ -46,6 +49,7 @@ async def test_entities_follow_detector(hass, setup_entry, fake_detector):
         "video_connected", "motion_detected", "motion_updated", "motion_cleared", "video_lost"
     ]
     assert events[1].data["percent"] == 1.23
+    assert events[3].data["percent"] == 7.5
 
 
 async def test_camera_image_is_jpeg(hass, setup_entry):
