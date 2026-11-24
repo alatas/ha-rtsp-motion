@@ -9,6 +9,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.rtsp_motion.config_flow import CannotConnect
 from custom_components.rtsp_motion.const import CONF_IGNORE_AREAS, CONF_MIN_PERCENT, DOMAIN
 from custom_components.rtsp_motion.hub import build_url
+from custom_components.rtsp_motion.preview import URL
 
 from .conftest import ENTRY_DATA
 
@@ -73,6 +74,11 @@ async def test_options_flow_reloads_with_new_settings(hass, setup_entry, fake_de
 
     good = {**bad, CONF_IGNORE_AREAS: "65,0,35,12; 0,80,20,20"}
     result = await hass.config_entries.options.async_configure(result["flow_id"], good)
+    # Changed areas: shown on the picture before saving.
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "check_areas"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "save"})
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
@@ -88,6 +94,9 @@ async def test_options_flow_empty_areas_watches_everything(hass, setup_entry, fa
         result["flow_id"],
         {CONF_MIN_PERCENT: 0.5, "pixel_threshold": 25, "confirm_frames": 3, "hold_seconds": 5},
     )
+    assert result["step_id"] == "check_areas"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "save"})
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert fake_detector.instances[-1].settings.masks == []
@@ -147,3 +156,73 @@ async def test_reconfigure_shows_connection_errors(hass, setup_entry, fake_detec
 
 def test_build_url_without_credentials():
     assert build_url({"host": "cam", "port": 8554, "path": "/a/b"}) == "rtsp://cam:8554/a/b"
+
+
+SETTINGS = {CONF_MIN_PERCENT: 2, "pixel_threshold": 30, "confirm_frames": 2, "hold_seconds": 10}
+
+
+async def test_options_form_shows_the_areas_on_the_picture(hass, setup_entry):
+    result = await hass.config_entries.options.async_init(setup_entry.entry_id)
+    preview = result["description_placeholders"]["preview"]
+    path = URL.format(entry_id=setup_entry.entry_id)
+    assert preview.startswith("![") and f"({path}?" in preview
+    assert "authSig=" in preview and "areas=65,0,35,12" in preview
+
+
+async def test_options_form_without_picture_says_so(hass, setup_entry, fake_detector):
+    fake_detector.instances[-1].image = None
+    result = await hass.config_entries.options.async_init(setup_entry.entry_id)
+    assert "No camera picture yet" in result["description_placeholders"]["preview"]
+    # Without a picture there is nothing to check: changed areas save directly.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**SETTINGS, CONF_IGNORE_AREAS: "0,0,10,10"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_unchanged_areas_save_directly(hass, setup_entry):
+    result = await hass.config_entries.options.async_init(setup_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**SETTINGS, CONF_IGNORE_AREAS: "65, 0, 35, 12"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_change_the_areas_goes_back_with_the_new_values(hass, setup_entry, fake_detector):
+    result = await hass.config_entries.options.async_init(setup_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**SETTINGS, CONF_IGNORE_AREAS: "0, 0, 50, 50"})
+    assert result["step_id"] == "check_areas"
+    assert "areas=0,0,50,50" in result["description_placeholders"]["preview"]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"})
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "init"
+    assert "areas=0,0,50,50" in result["description_placeholders"]["preview"]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**SETTINGS, CONF_IGNORE_AREAS: "10,10,20,20"})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "save"})
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert fake_detector.instances[-1].settings.masks == [(0.1, 0.1, 0.2, 0.2)]
+
+
+async def test_preview_image_is_served_to_the_signed_url_only(
+    hass, setup_entry, hass_client_no_auth
+):
+    result = await hass.config_entries.options.async_init(setup_entry.entry_id)
+    preview = result["description_placeholders"]["preview"]
+    signed = preview[preview.index("(") + 1:-1]
+    client = await hass_client_no_auth()
+    resp = await client.get(signed)
+    assert resp.status == 200
+    assert resp.headers["Content-Type"] == "image/jpeg"
+    assert (await resp.read()).startswith(bytes([0xFF, 0xD8]))  # JPEG
+    unsigned = signed.split("&authSig=")[0]
+    assert (await client.get(unsigned)).status == 401
+
+
+async def test_preview_rejects_bad_areas_and_unknown_entries(hass, setup_entry, hass_client):
+    client = await hass_client()
+    path = URL.format(entry_id=setup_entry.entry_id)
+    assert (await client.get(path + "?areas=1,2,3")).status == 400
+    assert (await client.get(path + "?areas=1,2,3,4")).status == 200
+    assert (await client.get(URL.format(entry_id="nope"))).status == 404

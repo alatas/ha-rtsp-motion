@@ -8,6 +8,7 @@ from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN
 from .hub import RtspMotionHub
+from .preview import async_register_view
 
 PLATFORMS = [
     Platform.CAMERA,
@@ -28,6 +29,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RtspMotionConfigEntry) -
         manufacturer="RTSP Motion",
         model="Pixel-change motion detector",
     )
+    async_register_view(hass)
     hub = RtspMotionHub(hass, entry, device.id)
     entry.runtime_data = hub
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

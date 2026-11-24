@@ -42,6 +42,7 @@
     "step": {
       "init": {
         "title": "Motion detection settings",
+        "description": "The picture shows the ignored areas (shaded, yellow outline) on the camera's current view. The grid lines are every 10%, so you can read the numbers for **Ignored areas** off it.\n\n{preview}",
         "data": {
           "min_percent": "Minimum change",
           "pixel_threshold": "Pixel sensitivity",
@@ -56,7 +57,15 @@
           "compare_seconds": "Each frame is compared with the frame from this many seconds earlier. Longer catches slow or distant movement better; 0 = the previous frame.",
           "confirm_frames": "Frames to wait to confirm a change is still there. Filters out one-frame video glitches. 0 = off.",
           "hold_seconds": "Motion stays on this long after the last change.",
-          "ignore_areas": "Areas to ignore, as x,y,width,height in percent of the picture, separated by ';'. The default 65,0,35,12 is the top-right corner, where many cameras show a clock. Empty = watch the whole picture."
+          "ignore_areas": "Areas to ignore (exclusion zones), as x,y,width,height in percent of the picture, separated by ';'. Read them off the grid above: 65,0,35,12 starts at 65% from the left and 0% from the top, and is 35% wide and 12% high (the top-right corner, where many cameras show a clock). When you change them you see the result before saving. Empty = watch the whole picture."
+        }
+      },
+      "check_areas": {
+        "title": "Check the ignored areas",
+        "description": "This is what the new ignored areas cover. Movement in the shaded parts is not detected.\n\n{preview}",
+        "menu_options": {
+          "save": "Save",
+          "init": "Change the areas"
         }
       }
     },
@@ -77,18 +86,30 @@
   },
   "entity": {
     "binary_sensor": {
-      "motion": { "name": "Motion" },
-      "video_connected": { "name": "Video" }
+      "motion": {
+        "name": "Motion"
+      },
+      "video_connected": {
+        "name": "Video"
+      }
     },
     "sensor": {
-      "motion_change": { "name": "Motion change" },
-      "frame_rate": { "name": "Frame rate" }
+      "motion_change": {
+        "name": "Motion change"
+      },
+      "frame_rate": {
+        "name": "Frame rate"
+      }
     },
     "image": {
-      "last_motion": { "name": "Last motion" }
+      "last_motion": {
+        "name": "Last motion"
+      }
     },
     "switch": {
-      "motion_detection": { "name": "Motion detection" }
+      "motion_detection": {
+        "name": "Motion detection"
+      }
     }
   }
 }

@@ -38,6 +38,7 @@ from .const import (
     VIDEO_LOST,
 )
 from .detector import Callbacks, DetectorSettings, DetectorState, MotionDetector
+from .overlay import draw_areas
 
 FPS_UPDATE_SECONDS = 10
 
@@ -116,7 +117,19 @@ class RtspMotionHub(Callbacks):
         return to_jpeg(self.detector.latest_image())
 
     def alarm_jpeg(self) -> bytes | None:
-        return to_jpeg(self.detector.alarm_image())
+        """The last motion, with the ignored areas shaded (why something wasn't seen)."""
+        rgb = self.detector.alarm_image()
+        if rgb is None:
+            return None
+        return to_jpeg(draw_areas(rgb, self.detector.settings.masks))
+
+    def areas_jpeg(self, areas) -> bytes | None:
+        """The live picture with these ignored areas shaded and a percent grid (for
+        the settings form). None while there is no picture."""
+        rgb = self.detector.latest_image(mark_changes=False)
+        if rgb is None:
+            return None
+        return to_jpeg(draw_areas(rgb, areas, grid=True))
 
     # ---- detector callbacks (detector thread) -----------------------------
 

@@ -36,6 +36,7 @@ from .const import (
 )
 from .detector import redact
 from .hub import build_url, parse_areas
+from .preview import preview_markdown
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -160,18 +161,29 @@ class RtspMotionConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class RtspMotionOptionsFlow(OptionsFlow):
+    def __init__(self) -> None:
+        self._pending: dict[str, Any] | None = None  # submitted settings awaiting the check
+
+    def _saved_areas(self) -> str:
+        return self.config_entry.options.get(CONF_IGNORE_AREAS, DEFAULT_IGNORE_AREAS)
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
-                parse_areas(user_input.get(CONF_IGNORE_AREAS, ""))
+                new_areas = parse_areas(user_input.get(CONF_IGNORE_AREAS, ""))
             except ValueError:
                 errors[CONF_IGNORE_AREAS] = "invalid_areas"
             else:
                 user_input.setdefault(CONF_IGNORE_AREAS, "")
+                self._pending = user_input
+                # Changed areas are shown on the picture before saving (when there is one).
+                if (new_areas != parse_areas(self._saved_areas())
+                        and "![" in preview_markdown(self.hass, self.config_entry, "")):
+                    return await self.async_step_check_areas()
                 return self.async_create_entry(data=user_input)
 
-        o = user_input or self.config_entry.options
+        o = user_input or self._pending or self.config_entry.options
 
         def num(minimum, maximum, step, unit=None):
             config = selector.NumberSelectorConfig(
@@ -200,4 +212,24 @@ class RtspMotionOptionsFlow(OptionsFlow):
                 ): str,
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+        shown = o.get(CONF_IGNORE_AREAS, DEFAULT_IGNORE_AREAS) if not errors else self._saved_areas()
+        return self.async_show_form(
+            step_id="init", data_schema=schema, errors=errors,
+            description_placeholders={"preview": preview_markdown(self.hass, self.config_entry, shown)},
+        )
+
+    async def async_step_check_areas(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """The new ignored areas on the live picture: save, or go back and change them."""
+        assert self._pending is not None
+        return self.async_show_menu(
+            step_id="check_areas",
+            menu_options=["save", "init"],
+            description_placeholders={
+                "preview": preview_markdown(self.hass, self.config_entry,
+                                            self._pending[CONF_IGNORE_AREAS]),
+            },
+        )
+
+    async def async_step_save(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        assert self._pending is not None
+        return self.async_create_entry(data=self._pending)

@@ -47,7 +47,7 @@ class FakeDetector:
     def join(self, timeout=None):
         pass
 
-    def latest_image(self):
+    def latest_image(self, mark_changes=True):
         return self.image
 
     def alarm_image(self):

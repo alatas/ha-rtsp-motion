@@ -19,7 +19,7 @@ Each camera becomes a device with:
 | Camera | Live picture with the changed pixels in red |
 | Motion | On while a change is detected |
 | Motion change | Peak change (%) of the current motion, 0 when there is none |
-| Last motion | Snapshot of the last motion, changed pixels in red |
+| Last motion | Snapshot of the last motion, changed pixels in red, ignored areas shaded |
 | Motion detection | Switch to pause detection (video keeps running) |
 | Video | Diagnostic: is the camera sending video |
 | Frame rate | Diagnostic: frames per second received |
@@ -65,11 +65,23 @@ actions:
 | Compare with frame from | 0.5 s | Each frame is compared with the frame from this long ago. Longer catches slow or distant movement (someone walking in from far away); 0 = the previous frame. |
 | Confirm frames | 3 | Frames to wait to confirm a change is still there. Filters out one-frame video glitches. 0 = off. |
 | Motion hold time | 5 s | Motion stays on this long after the last change. |
-| Ignored areas | `65,0,35,12` | `x,y,width,height` in percent, separated by `;`. The default is the top-right corner, where many cameras show a clock. Empty = whole picture. |
+| Ignored areas | `65,0,35,12` | Parts of the picture where movement is ignored (exclusion zones), as `x,y,width,height` in percent, separated by `;`. The default is the top-right corner, where many cameras show a clock. Empty = whole picture. |
 
 To change the address (for example after the camera got a new IP), username or
 password, use **⋮ → Reconfigure** on the integration. The device stays the same, so
 automations that use its triggers keep working.
+
+### Ignored areas
+
+The **Configure** form shows the camera's current picture with the ignored areas
+shaded (yellow outline) and a grid every 10%, so you can read the numbers off it:
+`65,0,35,12` starts 65% from the left and 0% from the top, and is 35% wide and 12%
+high. When you change the areas and press **Submit**, the next screen shows the new
+areas on the picture, with **Save** or **Change the areas**. Without a picture (camera
+not connected) the form saves directly.
+
+The **Last motion** picture shades the ignored areas too, so you can see when
+something was missed because it was in one.
 
 ## Installation
 
