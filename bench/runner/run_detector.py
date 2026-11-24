@@ -66,16 +66,17 @@ class Recording:
 
 
 class _Recorder(Callbacks):
-    def __init__(self) -> None:
+    def __init__(self, clock=time.monotonic) -> None:
+        self.clock = clock
         self.t0: float | None = None
-        self.started = time.monotonic()
+        self.started = clock()
         self.events: list[tuple[float, str, float | None]] = []
         self.fps: list[float] = []
         self.pre: list[tuple[str, float | None]] = []
         self._lock = threading.Lock()
 
     def _add(self, kind: str, value: float | None) -> None:
-        now = time.monotonic()
+        now = self.clock()
         with self._lock:
             if self.t0 is None:
                 self.pre.append((kind, value))  # shouldn't happen: keep, counted separately
@@ -85,7 +86,7 @@ class _Recorder(Callbacks):
     def on_connected(self) -> None:
         with self._lock:
             if self.t0 is None:
-                self.t0 = time.monotonic()
+                self.t0 = self.clock()
         self._add("connected", None)
 
     def on_disconnected(self, reason: str) -> None:
@@ -116,6 +117,36 @@ def run_stream(url: str, settings: DetectorSettings, seconds: float) -> Recordin
     with rec._lock:
         offset = (rec.t0 - rec.started) if rec.t0 is not None else None
         return Recording(list(rec.events), offset, list(rec.pre), list(rec.fps), error)
+
+
+class _FileDetector(MotionDetector):
+    """Counts frames, so callbacks can be stamped with video time (frame / fps)."""
+
+    def __init__(self, path: str, settings: DetectorSettings, callbacks: Callbacks, fps: float):
+        super().__init__(path, settings, callbacks)
+        self.fps = fps
+        self.frames = 0
+
+    def _frame_received(self) -> None:
+        super()._frame_received()
+        self.frames += 1
+
+    @property
+    def video_time(self) -> float:
+        return max(0, self.frames - 1) / self.fps
+
+
+def run_file(path: str, settings: DetectorSettings, fps: float) -> Recording:
+    """Run the detector over a video file as fast as it decodes, in this thread.
+    Event times are video seconds (frame count / fps), so the truth needs no shift."""
+    det: _FileDetector | None = None
+    rec = _Recorder(clock=lambda: det.video_time if det else 0.0)
+    det = _FileDetector(path, settings, rec, fps)
+    det._read_stream()
+    det._end_motion()  # the file ended: close an open motion like a broken stream does
+    with rec._lock:
+        offset = 0.0 if rec.t0 is not None else None
+        return Recording(list(rec.events), offset, list(rec.pre), [fps], None)
 
 
 def score_recording(name: str, truth: list, rec: Recording, settings: DetectorSettings,

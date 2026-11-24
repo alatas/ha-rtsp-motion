@@ -7,7 +7,7 @@ from pathlib import Path
 import av
 
 from custom_components.rtsp_motion.detector import DetectorSettings
-from runner.run_detector import BASE, run_stream, run_token, score_recording
+from runner.run_detector import BASE, run_file, run_stream, run_token, score_recording
 from runner.report import write_report
 
 NO_DATA = "No VIRAT data. Run: python -m virat.fetch --accept-virat-terms"
@@ -35,6 +35,25 @@ def clip_seconds(clip: str) -> float:
             return c.duration / av.time_base
         s = c.streams.video[0]
         return float(s.duration * s.time_base)
+
+
+def clip_fps(clip: str) -> float:
+    with av.open(str(data_dir() / "videos" / f"{clip}.mp4")) as c:
+        return float(c.streams.video[0].average_rate)
+
+
+def run_clip_file(clip: str) -> dict:
+    """File mode: decode the clip directly, as fast as the CPU allows. Same detector and
+    scoring; times are video seconds, so there is no connect or transport lag."""
+    truth = json.loads((data_dir() / "truth" / f"{clip}.json").read_text())["truth"]
+    settings = DetectorSettings()
+    seconds = clip_seconds(clip)
+    rec = run_file(str(data_dir() / "videos" / f"{clip}.mp4"), settings, clip_fps(clip))
+    row = score_recording(clip, [tuple(t) for t in truth], rec, settings, seconds)
+    row["passed"] = row["connected"] >= 1 and not row.get("error")
+    if row["connected"] < 1:
+        row["error"] = "no frames decoded"
+    return row
 
 
 def run_clip(clip: str) -> dict:

@@ -144,8 +144,17 @@ docker compose -f bench/docker-compose.yml run --rm runner \
 is 119 clips, about 4.3 GB. Then:
 
 ```bash
-docker compose -f bench/docker-compose.yml run --rm runner python -m runner virat [--only CLIP] [--limit N] [--parallel N]
+docker compose -f bench/docker-compose.yml run --rm runner python -m runner virat [--mode file|rtsp] [--only CLIP] [--limit N] [--parallel N]
 ```
+
+- `--mode file` (default) decodes the clip files directly, as fast as the CPU allows,
+  one worker process per CPU core. Same detector and scoring; times are video seconds,
+  so there is no connect or transport lag. The full set takes a few minutes.
+- `--mode rtsp` streams every clip through the RTSP server in real time, like a camera
+  (about 30 minutes at `--parallel 6`). Use it when the network path matters; the
+  synthetic scenarios already cover freezes, reconnects and clock jumps.
+- Clips start longest first, so a long clip never runs on alone at the end. The report
+  stays in name order.
 
 Truth is derived from the annotated object boxes: an object is moving when it travels
 more than 2% of the frame width per second, and motion intervals are the union of

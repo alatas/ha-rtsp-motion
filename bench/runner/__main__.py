@@ -1,4 +1,5 @@
 import argparse
+import functools
 import os
 import sys
 import time
@@ -25,9 +26,12 @@ def virat_main(args, ap) -> int:
             ap.error(f"unknown clip {args.only!r}; valid: {', '.join(known)}")
         print(virat_run.NO_DATA)
         return 0
-    if args.parallel > MAX_PARALLEL:
-        print(f"warning: --parallel {args.parallel} is above {MAX_PARALLEL}; timing skews",
+    file_mode = args.mode == "file"
+    parallel = args.parallel or (os.cpu_count() or 1 if file_mode else 1)
+    if not file_mode and parallel > MAX_PARALLEL:
+        print(f"warning: --parallel {parallel} is above {MAX_PARALLEL}; timing skews",
               file=sys.stderr, flush=True)
+    t0 = time.monotonic()
 
     def save(rows: list[dict]) -> None:
         virat_run.write_virat_report(rows, results_path("virat.md"), results_path("virat.json"))
@@ -36,9 +40,16 @@ def virat_main(args, ap) -> int:
         print(f"{row['scenario']}: {'ok' if row['passed'] else 'ERROR'}"
               + (f" ({row['error']})" if row.get("error") else ""), flush=True)
 
-    jobs = [(c, lambda c=c: virat_run.run_clip(c)) for c in clips]
+    if file_mode:  # CPU-bound decoding: worker processes, picklable jobs
+        jobs = [(c, functools.partial(virat_run.run_clip_file, c)) for c in clips]
+    else:
+        jobs = [(c, lambda c=c: virat_run.run_clip(c)) for c in clips]
+    # Longest clips first, so a long one doesn't start last and run on alone at the end.
+    lengths = [virat_run.clip_seconds(c) for c in clips]
+    order = sorted(range(len(clips)), key=lambda i: -lengths[i])
     try:
-        rows = run_jobs(jobs, args.parallel, on_row=save, on_done=done)
+        rows = run_jobs(jobs, parallel, on_row=save, on_done=done, order=order,
+                        processes=file_mode)
     except KeyboardInterrupt as err:
         save(getattr(err, "rows", []))
         print("interrupted: partial report written", file=sys.stderr, flush=True)
@@ -46,7 +57,8 @@ def virat_main(args, ap) -> int:
     save(rows)
     t = virat_run.totals(rows)
     print(f"{t['clips']} clips, hits {t['hits']}/{t['truth']}, false alarms {t['false_alarms']}, "
-          f"stuck {t['stuck']}", flush=True)
+          f"stuck {t['stuck']}; {args.mode} mode, parallel {parallel}, "
+          f"wall time {time.monotonic() - t0:.0f} s", flush=True)
     return 0  # measurements, not pass/fail
 
 
@@ -62,13 +74,17 @@ def main() -> int:
     vir = sub.add_parser("virat", help="measure the detector on VIRAT clips (no pass/fail)")
     vir.add_argument("--only", help="run just this clip")
     vir.add_argument("--limit", type=int, metavar="N", help="run at most N clips")
-    vir.add_argument("--parallel", type=int, default=1, metavar="N",
-                     help="run up to N clips at the same time (default 1; above 6 timing skews)")
+    vir.add_argument("--mode", choices=("file", "rtsp"), default="file",
+                     help="file (default): decode the clip files directly, faster than real "
+                          "time; rtsp: stream each clip through the RTSP server in real time")
+    vir.add_argument("--parallel", type=int, default=None, metavar="N",
+                     help="run up to N clips at the same time (default: CPU count in file "
+                          "mode, 1 in rtsp mode; above 6 rtsp timing skews)")
     args = ap.parse_args()
     if args.cmd == "virat" and args.limit is not None and args.limit < 1:
         ap.error("--limit must be >= 1")
 
-    if args.parallel < 1:
+    if args.parallel is not None and args.parallel < 1:
         ap.error("--parallel must be >= 1")
     if args.cmd == "virat":
         return virat_main(args, ap)
