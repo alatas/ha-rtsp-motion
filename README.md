@@ -8,7 +8,7 @@ set percentage of the picture changes. No AI, no cloud, no extra add-on.
 
 It detects *change*: someone moving is detected, someone standing still is not.
 
-![A man walks down a garden path towards the camera; the camera picture marks him in red as he moves](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/demo.webp)
+![A man walks down a garden path towards the camera; the camera picture marks him in red](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/camera.jpg)
 
 *The camera entity: what changed is marked in red.*
 
