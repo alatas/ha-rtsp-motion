@@ -278,6 +278,59 @@ def test_joining_between_keyframes_is_quiet(tmp_path):
     assert not any(kind == "start" for kind, _ in events), events
 
 
+def _annexb_nals(data: bytes) -> list[bytes]:
+    starts = [i for i in range(len(data) - 3) if data[i:i + 3] == b"\0\0\1"]
+    return [data[s:(starts[k + 1] if k + 1 < len(starts) else len(data))]
+            for k, s in enumerate(starts)]
+
+
+def test_partial_first_keyframe_is_quiet(tmp_path):
+    """A reader that joins while a keyframe is being sent gets only its last slices.
+    The missing part stays blank until the next keyframe, whose full picture must not
+    count as motion (the decoder flags none of these frames as corrupt)."""
+    full = tmp_path / "full.ts"
+    out = av.open(str(full), "w")
+    stream = out.add_stream("libx264", rate=15)
+    stream.width, stream.height, stream.pix_fmt = 1280, 720, "yuv420p"
+    # zerolatency: several slices per frame, like the bench publisher; 3 s GOP.
+    stream.options = {"preset": "ultrafast", "tune": "zerolatency", "g": "45",
+                      "keyint_min": "45", "sc_threshold": "0"}
+    yy, xx = np.mgrid[0:720, 0:1280]
+    img = np.zeros((720, 1280, 3), np.uint8)
+    img[..., 0] = ((xx // 16 + yy // 16) % 2) * 200  # textured, still
+    img[..., 1] = (xx * 255 // 1280).astype(np.uint8)
+    for _ in range(120):
+        for packet in stream.encode(av.VideoFrame.from_ndarray(img, format="rgb24")):
+            out.mux(packet)
+    for packet in stream.encode():
+        out.mux(packet)
+    out.close()
+    cut = tmp_path / "cut.ts"
+    src, dst = av.open(str(full)), av.open(str(cut), "w")
+    s_in = src.streams.video[0]
+    s_out = dst.add_stream_from_template(s_in)
+    first = True
+    for packet in src.demux(s_in):
+        if packet.dts is None:
+            continue
+        if first:  # drop the top half of the first keyframe's slices
+            first = False
+            nals = _annexb_nals(bytes(packet))
+            slices = [n for n in nals if n[3] & 31 == 5]
+            assert len(slices) > 1, "encoder made one slice: test can't cut the keyframe"
+            data = b"".join([n for n in nals if n[3] & 31 != 5] + slices[len(slices) // 2:])
+            new = av.Packet(data)
+            new.pts, new.dts, new.time_base, new.is_keyframe = (
+                packet.pts, packet.dts, packet.time_base, True)
+            packet = new
+        packet.stream = s_out
+        dst.mux(packet)
+    src.close()
+    dst.close()
+    events, _ = run(cut, DetectorSettings(hold_seconds=0))
+    assert not any(kind == "start" for kind, _ in events), events
+
+
 def test_hold_counts_from_when_the_change_was_seen(tmp_path):
     """At low frame rates confirm_frames takes seconds; the hold timer must start at
     the change, not at the confirmation."""

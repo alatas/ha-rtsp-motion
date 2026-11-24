@@ -203,6 +203,10 @@ class MotionDetector(threading.Thread):
             pending_ref = None
             pending_since = 0.0
             pending_left = 0
+            # Joining while a keyframe is being sent yields only its last slices: the
+            # rest of the picture stays blank until the next keyframe (the decoder
+            # doesn't flag it). So the second keyframe starts a fresh reference.
+            keyframes = 0
             last_update = time.time()
             frames_since_update = 0
             for frame in container.decode(stream):
@@ -224,6 +228,11 @@ class MotionDetector(threading.Thread):
                     self.state.connected = True
                     _LOGGER.info("Video connected (%dx%d)", frame.width, frame.height)
                     self.callbacks.on_connected()
+                if frame.key_frame and keyframes < 2:
+                    keyframes += 1
+                    if keyframes == 2:
+                        history.clear()
+                        pending_ref = None
                 if self._keep is None or self._keep.shape != gray.shape:
                     self._keep = _build_keep(gray.shape, self.settings.masks)
                     history.clear()
