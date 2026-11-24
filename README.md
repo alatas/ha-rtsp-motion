@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/custom_components/rtsp_motion/brand/icon.png" alt="RTSP Motion logo" width="96" align="right">
+
 # RTSP Motion for Home Assistant
 
 Simple pixel-change motion detection for any RTSP camera. It compares each video
@@ -5,6 +7,10 @@ frame with the one from half a second earlier and reports motion when more than 
 set percentage of the picture changes. No AI, no cloud, no extra add-on.
 
 It detects *change*: someone moving is detected, someone standing still is not.
+
+![Last motion picture: the moving object's changed pixels in red, the ignored clock area in the top-right corner shaded](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/last-motion.jpg)
+
+*The Last motion picture: changed pixels in red, the ignored area (top right) shaded.*
 
 ## What you get
 
@@ -26,6 +32,8 @@ Each camera becomes a device with:
 
 The camera entity shows the frames this integration already reads, so the camera
 only gets **one** connection.
+
+![The device page in Home Assistant during a motion: Motion detected, Motion change 3.52%, frame rate 15 fps, video connected](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/device.jpg)
 
 ### Automation triggers
 
@@ -79,6 +87,10 @@ shaded (yellow outline) and a grid every 10%, so you can read the numbers off it
 high. When you change the areas and press **Submit**, the next screen shows the new
 areas on the picture, with **Save** or **Change the areas**. Without a picture (camera
 not connected) the form saves directly.
+
+| Configure form | After changing the areas |
+|---|---|
+| ![The Configure form with the camera picture, the ignored area shaded and a 10% grid](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/configure.jpg) | ![The check step showing two ignored areas on the picture, with Save and Change the areas](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/check-areas.jpg) |
 
 The **Last motion** picture shades the ignored areas too, so you can see when
 something was missed because it was in one.
