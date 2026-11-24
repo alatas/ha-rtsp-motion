@@ -94,6 +94,9 @@ class _Recorder(Callbacks):
 
     def on_motion_start(self, percent: float) -> None:
         self._add("start", percent)
+        snap = getattr(self, "snap", None)
+        if snap is not None and self.t0 is not None and self.clock() - self.t0 < EARLY_SECONDS:
+            snap(percent, self.clock() - self.t0)
 
     def on_motion_end(self, peak_percent: float) -> None:
         self._add("end", peak_percent)
@@ -104,9 +107,57 @@ class _Recorder(Callbacks):
                 self.fps.append(state.fps)
 
 
+EARLY_SECONDS = 2.0  # a motion this soon after connecting gets a diagnostic snapshot
+
+
+class _SnapDetector(MotionDetector):
+    """Remembers the last compared pair and frame arrival times, so a motion right after
+    connecting can be saved as pictures for diagnosis."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.last_pair = None
+        self.arrivals: list[float] = []
+
+    def _frame_received(self) -> None:
+        super()._frame_received()
+        if len(self.arrivals) < 200:
+            self.arrivals.append(time.monotonic())
+
+    def _changed(self, a, b, keep):
+        self.last_pair = (a, b)
+        return super()._changed(a, b, keep)
+
+
+def _save_snapshot(det: _SnapDetector, url: str, percent: float, since_connect: float) -> None:
+    import json
+    import os
+
+    import numpy as np
+    from PIL import Image
+
+    out = os.path.join(os.environ.get("BENCH_RESULTS_DIR", "results"), "early")
+    os.makedirs(out, exist_ok=True)
+    name = "_".join(url.rsplit("/", 2)[-2:])
+    if det.last_pair is not None:
+        ref, cur = det.last_pair
+        diff = np.abs(ref.astype(np.int16) - cur.astype(np.int16)).clip(0, 255).astype(np.uint8)
+        Image.fromarray(np.hstack([ref, cur, diff])).save(f"{out}/{name}_ref_cur_diff.png")
+    img = det.alarm_image()
+    if img is not None:
+        Image.fromarray(img).save(f"{out}/{name}_alarm.png")
+    t = det.arrivals
+    with open(f"{out}/{name}.json", "w") as f:
+        json.dump({"url_path": name, "percent": percent, "since_connect": since_connect,
+                   "frames_before": len(t),
+                   "arrival_gaps_ms": [round((b - a) * 1000, 1) for a, b in zip(t, t[1:])]},
+                  f, indent=1)
+
+
 def run_stream(url: str, settings: DetectorSettings, seconds: float) -> Recording:
     rec = _Recorder()
-    det = MotionDetector(url, settings, rec)
+    det = _SnapDetector(url, settings, rec)
+    rec.snap = lambda pct, dt: _save_snapshot(det, url, pct, dt)
     det.start()
     try:
         time.sleep(seconds)

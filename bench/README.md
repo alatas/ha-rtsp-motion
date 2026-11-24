@@ -89,6 +89,13 @@ The first full run found these, all fixed in the integration since:
   jumps now count as one frame step.
 - `glitch_burst`: a broken first picture became the reference. Detection now starts
   `compare_seconds + 0.5` s after connecting.
+- Under load (`--parallel 6`) a run sometimes reported motion 0.05-0.15 s after
+  connecting. The reader had joined while the first keyframe was being sent and got
+  only its last slices (the publisher's x264 `zerolatency` makes several per frame).
+  The rest of the picture stayed blank until the next keyframe, which the decoder
+  doesn't flag, and the full picture appearing looked like motion. The second
+  keyframe now starts a fresh reference. A motion within 2 s of connecting saves the
+  compared pictures to `results/early/` for diagnosis.
 - `low_fps`: frame-threaded decoding held back one frame per thread (4 s at 2 fps).
   Decoding now uses slice threading only.
 - `lights_on` was a bench problem: a 1 s change can't be scored as a hit before it
