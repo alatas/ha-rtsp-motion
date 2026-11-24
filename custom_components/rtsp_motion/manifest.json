@@ -4,7 +4,7 @@
   "categories": ["security_safety.cameras", "sensors.motion_presence"],
   "codeowners": ["@alatas"],
   "config_flow": true,
-  "dependencies": ["stream"],
+  "dependencies": ["http", "stream"],
   "documentation": "https://github.com/alatas/ha-rtsp-motion",
   "integration_type": "device",
   "iot_class": "local_push",
