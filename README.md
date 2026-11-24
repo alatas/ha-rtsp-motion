@@ -8,9 +8,9 @@ set percentage of the picture changes. No AI, no cloud, no extra add-on.
 
 It detects *change*: someone moving is detected, someone standing still is not.
 
-![Last motion picture: the moving object's changed pixels in red, the ignored clock area in the top-right corner shaded](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/last-motion.jpg)
+![A man walks down a garden path towards the camera; the camera picture marks him in red as he moves](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/demo.webp)
 
-*The Last motion picture: changed pixels in red, the ignored area (top right) shaded.*
+*The camera entity: what changed is marked in red.*
 
 ## What you get
 
@@ -33,7 +33,7 @@ Each camera becomes a device with:
 The camera entity shows the frames this integration already reads, so the camera
 only gets **one** connection.
 
-![The device page in Home Assistant during a motion: Motion detected, Motion change 3.52%, frame rate 15 fps, video connected](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/device.jpg)
+![A Home Assistant dashboard: the live camera with the walking man in red; Motion detected, Motion change 13.71%, detection on, 24 fps; and the Last motion picture with the ignored area shaded](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/dashboard.jpg)
 
 ### Automation triggers
 
@@ -90,7 +90,7 @@ not connected) the form saves directly.
 
 | Configure form | After changing the areas |
 |---|---|
-| ![The Configure form with the camera picture, the ignored area shaded and a 10% grid](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/configure.jpg) | ![The check step showing two ignored areas on the picture, with Save and Change the areas](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/check-areas.jpg) |
+| ![The Configure form with the camera picture, the ignored area shaded and a 10% grid](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/configure.jpg) | ![The check step: the clock area and the bush on the right shaded, with Save and Change the areas](https://raw.githubusercontent.com/alatas/ha-rtsp-motion/main/docs/images/check-areas.jpg) |
 
 The **Last motion** picture shades the ignored areas too, so you can see when
 something was missed because it was in one.
@@ -145,3 +145,6 @@ every push.
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+The demo footage in the pictures is [A Man Walking at the Backyard](https://www.pexels.com/video/a-man-walking-at-the-backyard-5891635/) by Honye Sanges on
+Pexels, played through a test camera; it is not covered by the MIT license.
